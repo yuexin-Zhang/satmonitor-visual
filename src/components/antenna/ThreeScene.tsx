@@ -170,7 +170,7 @@ const ThreeScene = () => {
     // 加载 GLB 模型
     const loader = new GLTFLoader();
     loader.load(
-      '/models/radar.glb',
+      `${import.meta.env.BASE_URL}models/radar.glb`,
       (gltf) => {
         const model = gltf.scene;
         scene.add(model);
