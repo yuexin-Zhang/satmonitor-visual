@@ -62,9 +62,9 @@ export default function AntennaInfo() {
         <Info className="w-3 h-3 text-slate-500 cursor-help" />
       </div>
 
-      <div className="panel-content flex-1 flex flex-col gap-3 overflow-y-auto">
+      <div className="panel-content flex-1 flex flex-col gap-3 overflow-hidden">
         {/* 基础参数 */}
-        <div className="space-y-1.5 text-[clamp(10px,0.85vw,14px)]">
+        <div className="shrink-0 space-y-1.5 text-[clamp(10px,0.85vw,14px)]">
           <div className="flex items-center gap-2">
             <span className="text-slate-400">卫星:</span>
             <span className="text-slate-200">中星6E 115.5°</span>
@@ -87,15 +87,15 @@ export default function AntennaInfo() {
           </div>
         </div>
 
-        {/* 折线图 与 后续信息共享同一父容器，若空间不足则垂直滚动 */}
-        <div className="flex-1 min-h-0 flex flex-col" style={{ overflow: 'visible' }}>
-          <div className="pt-2 border-t border-slate-800 flex flex-col flex-shrink-0" style={{ overflow: 'visible' }}>
-            <div className="flex justify-between items-center text-[clamp(10px,0.85vw,14px)] mb-1">
+        {/* 折线图 与 后续信息：空间不足时在此容器内滚动 */}
+        <div className="flex-1 min-h-0 flex flex-col overflow-y-auto">
+          <div className="pt-2 border-t border-slate-800 flex flex-col">
+            <div className="shrink-0 flex justify-between items-center text-[clamp(10px,0.85vw,14px)] mb-1">
               <span className="text-slate-400">强度值</span>
               <span className="text-sky-400 font-mono">MAX: 92%</span>
             </div>
 
-            <div className="relative min-h-[170px] mb-3" style={{ overflow: 'visible' }}>
+            <div className="shrink-0 relative min-h-[170px] mb-3" style={{ overflow: 'visible' }}>
               <LineChart
                 xAxis={[{ data: xLabels, scaleType: 'point' }]}
                 yAxis={[{ min: 0, max: 100, tickInterval: [0, 20, 40, 60, 80, 100] }]}
@@ -147,8 +147,8 @@ export default function AntennaInfo() {
               </LineChart>
             </div>
 
-            {/* 可滚动的信息框区域 */}
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
+            {/* 信息框区域 */}
+            <div className="space-y-2">
               {/* 强度预警 */}
               <div className="mt-2 relative overflow-hidden rounded-md border border-sky-500/20 bg-sky-950/10">
               <div className="absolute inset-0 bg-gradient-to-r from-sky-500/5 to-transparent" />
