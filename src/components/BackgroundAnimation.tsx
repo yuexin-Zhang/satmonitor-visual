@@ -53,18 +53,18 @@ export default function BackgroundAnimation() {
     const createParticles = () => {
       particles = [];
       // 增加粒子密度
-      const count = Math.floor((canvas.width * canvas.height) / 12000);
+      const count = Math.floor((canvas.width * canvas.height) / 9000);
       for (let i = 0; i < count; i++) {
         particles.push({
           x: Math.random() * canvas.width,
           y: Math.random() * canvas.height,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: (Math.random() - 0.5) * 0.5,
-          size: Math.random() * 2.5 + 0.8,
-          opacity: Math.random() * 0.6 + 0.4,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: (Math.random() - 0.5) * 0.8,
+          size: Math.random() * 3.5 + 1.2,
+          opacity: Math.random() * 0.7 + 0.5,
           color: COLORS[Math.floor(Math.random() * COLORS.length)],
           pulse: Math.random() * Math.PI * 2,
-          pulseSpeed: Math.random() * 0.02 + 0.01,
+          pulseSpeed: Math.random() * 0.03 + 0.015,
         });
       }
     };
@@ -76,10 +76,10 @@ export default function BackgroundAnimation() {
         dataStreams.push({
           x: Math.random() * canvas.width,
           y: canvas.height + Math.random() * 200,
-          speed: Math.random() * 1.5 + 0.5,
-          length: Math.random() * 60 + 30,
-          opacity: Math.random() * 0.3 + 0.1,
-          width: Math.random() * 1.5 + 0.5,
+          speed: Math.random() * 2.5 + 1,
+          length: Math.random() * 80 + 40,
+          opacity: Math.random() * 0.45 + 0.2,
+          width: Math.random() * 2.5 + 1,
         });
       }
     };
@@ -134,10 +134,10 @@ export default function BackgroundAnimation() {
         const pulseSize = p.size * (0.8 + 0.2 * Math.sin(p.pulse));
 
         // 外发光
-        drawGlow(p.x, p.y, pulseSize * 8, p.color, pulseOpacity * 0.15);
+        drawGlow(p.x, p.y, pulseSize * 12, p.color, pulseOpacity * 0.25);
 
         // 内发光
-        drawGlow(p.x, p.y, pulseSize * 3, p.color, pulseOpacity * 0.3);
+        drawGlow(p.x, p.y, pulseSize * 5, p.color, pulseOpacity * 0.5);
 
         // 核心粒子
         ctx.beginPath();
@@ -158,12 +158,12 @@ export default function BackgroundAnimation() {
 
           if (dist < connectionDistance) {
             connections++;
-            const opacity = (1 - dist / connectionDistance) * 0.25;
+            const opacity = (1 - dist / connectionDistance) * 0.45;
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
             ctx.strokeStyle = `rgba(56, 189, 248, ${opacity})`;
-            ctx.lineWidth = 0.8;
+            ctx.lineWidth = 1.2;
             ctx.stroke();
           }
         }
