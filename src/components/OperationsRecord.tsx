@@ -13,7 +13,9 @@ import {
   AlertTriangle,
   Info,
 } from 'lucide-react';
-import { useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { fetchDashboardConfig } from '@/src/api/dashboard-config';
+import type { DashboardConfig } from '@/src/api/dashboard-config';
 
 interface RecordItem {
   id: string;
@@ -22,24 +24,7 @@ interface RecordItem {
   code: string;
   title: string;
   subtitle: string;
-  iconType:
-    | 'heat'
-    | 'heat-off'
-    | 'heat-fault'
-    | 'eye'
-    | 'temp-low'
-    | 'temp'
-    | 'temp-fault'
-    | 'rain-snow'
-    | 'rain-snow-fault'
-    | 'antenna'
-    | 'antenna-fault'
-    | 'power'
-    | 'power-fault'
-    | 'move'
-    | 'move-fault'
-    | 'signal'
-    | 'signal-fault';
+  iconType: string;
 }
 
 function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
@@ -120,7 +105,13 @@ function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
 }
 
 export default function OperationsRecord() {
-  const records: RecordItem[] = [
+  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
+
+  useEffect(() => {
+    fetchDashboardConfig().then(setConfig).catch(() => {});
+  }, []);
+
+  const defaultRecords: RecordItem[] = [
     {
       id: '1',
       date: '今天',
@@ -239,6 +230,8 @@ export default function OperationsRecord() {
       iconType: 'signal-fault',
     },
   ];
+
+  const records = config?.operations ?? defaultRecords;
 
   const grouped = useMemo(() => {
     const map = new Map<string, RecordItem[]>();

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Bell, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
+import { fetchDashboardConfig } from '@/src/api/dashboard-config';
+import type { DashboardConfig } from '@/src/api/dashboard-config';
 
 interface MaintenanceTipsProps {
   isAlerting?: boolean;
@@ -81,8 +83,14 @@ function useAlarmSound(enabled: boolean) {
   return { stop };
 }
 
-export default function MaintenanceTips({ isAlerting: initialAlerting = false }: MaintenanceTipsProps) {
-  const [isAlerting, setIsAlerting] = useState(initialAlerting);
+export default function MaintenanceTips({ isAlerting: initialAlerting }: MaintenanceTipsProps) {
+  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
+
+  useEffect(() => {
+    fetchDashboardConfig().then(setConfig).catch(() => {});
+  }, []);
+
+  const [isAlerting, setIsAlerting] = useState(initialAlerting ?? false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
 
@@ -101,7 +109,15 @@ export default function MaintenanceTips({ isAlerting: initialAlerting = false }:
     };
   }, []);
 
+  useEffect(() => {
+    if (config?.maintenanceTips && initialAlerting === undefined) {
+      setIsAlerting(config.maintenanceTips.isAlerting);
+    }
+  }, [config, initialAlerting]);
+
   useAlarmSound(isAlerting && soundEnabled && audioUnlocked);
+
+  if (config?.maintenanceTips?.enabled === false) return null;
 
   return (
     <div
@@ -149,12 +165,10 @@ export default function MaintenanceTips({ isAlerting: initialAlerting = false }:
           <p className="text-[clamp(11px,1.0vw,14px)] text-slate-300 mt-1">
             {isAlerting ? (
               <>
-                近期有大雨，请检查电源系统或网络，部件位置请点击{' '}
-                <span className="text-blue-400 underline cursor-pointer">标识</span>{' '}
-                (最好可以点击出图片)
+                {config?.maintenanceTips?.alertMessage ?? '近期有大雨，请检查电源系统或网络，部件位置请点击标识 (最好可以点击出图片)'}
               </>
             ) : (
-              <>系统运行正常，暂无异常告警。</>
+              <>{config?.maintenanceTips?.message ?? '系统运行正常，暂无异常告警。'}</>
             )}
           </p>
         </div>
