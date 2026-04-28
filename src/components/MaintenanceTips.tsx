@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Bell, AlertTriangle, Volume2, VolumeX } from 'lucide-react';
+import { fetchDashboardConfig } from '@/src/api/dashboard-config';
+import type { DashboardConfig } from '@/src/api/dashboard-config';
 
 interface MaintenanceTipsProps {
   isAlerting?: boolean;
@@ -81,8 +83,14 @@ function useAlarmSound(enabled: boolean) {
   return { stop };
 }
 
-export default function MaintenanceTips({ isAlerting: initialAlerting = false }: MaintenanceTipsProps) {
-  const [isAlerting, setIsAlerting] = useState(initialAlerting);
+export default function MaintenanceTips({ isAlerting: initialAlerting }: MaintenanceTipsProps) {
+  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
+
+  useEffect(() => {
+    fetchDashboardConfig().then(setConfig).catch(() => {});
+  }, []);
+
+  const [isAlerting, setIsAlerting] = useState(initialAlerting ?? false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
 
@@ -101,7 +109,15 @@ export default function MaintenanceTips({ isAlerting: initialAlerting = false }:
     };
   }, []);
 
+  useEffect(() => {
+    if (config?.maintenanceTips && initialAlerting === undefined) {
+      setIsAlerting(config.maintenanceTips.isAlerting);
+    }
+  }, [config, initialAlerting]);
+
   useAlarmSound(isAlerting && soundEnabled && audioUnlocked);
+
+  if (config?.maintenanceTips?.enabled === false) return null;
 
   return (
     <div
@@ -139,22 +155,20 @@ export default function MaintenanceTips({ isAlerting: initialAlerting = false }:
         {/* 提示内容 */}
         <div className="flex-1">
           <h3
-            className={`text-[clamp(11px,1.0vw,14px)] font-bold flex items-center gap-2 transition-colors duration-500 ${
+            className={`text-[clamp(13px,1.1vw,18px)] font-bold flex items-center gap-2 transition-colors duration-500 ${
               isAlerting ? 'text-red-400' : 'text-emerald-400'
             }`}
           >
             <AlertTriangle className="title-icon" />
             智能运检提示:
           </h3>
-          <p className="text-[clamp(11px,1.0vw,14px)] text-slate-300 mt-1">
+          <p className="text-[clamp(13px,1.1vw,18px)] text-slate-300 mt-1">
             {isAlerting ? (
               <>
-                近期有大雨，请检查电源系统或网络，部件位置请点击{' '}
-                <span className="text-blue-400 underline cursor-pointer">标识</span>{' '}
-                (最好可以点击出图片)
+                {config?.maintenanceTips?.alertMessage ?? '近期有大雨，请检查电源系统或网络，部件位置请点击标识 (最好可以点击出图片)'}
               </>
             ) : (
-              <>系统运行正常，暂无异常告警。</>
+              <>{config?.maintenanceTips?.message ?? '系统运行正常，暂无异常告警。'}</>
             )}
           </p>
         </div>
@@ -179,11 +193,11 @@ export default function MaintenanceTips({ isAlerting: initialAlerting = false }:
           {/* 状态显示 */}
           <div className="flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 rounded-lg">
             <div className="flex flex-col text-right">
-              <span className="text-[clamp(11px,1.0vw,14px)] uppercase text-slate-400">
+              <span className="text-[clamp(13px,1.1vw,18px)] uppercase text-slate-400">
                 当前系统状态
               </span>
               <span
-                className={`text-[clamp(11px,1.0vw,14px)] font-bold transition-colors duration-500 ${
+                className={`text-[clamp(13px,1.1vw,18px)] font-bold transition-colors duration-500 ${
                   isAlerting ? 'text-yellow-500' : 'text-emerald-500'
                 }`}
               >
@@ -200,7 +214,7 @@ export default function MaintenanceTips({ isAlerting: initialAlerting = false }:
           {/* 模拟切换按钮（方便演示） */}
           <button
             onClick={() => setIsAlerting((v) => !v)}
-            className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-[clamp(11px,1.0vw,14px)] text-slate-300"
+            className="px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-[clamp(13px,1.1vw,18px)] text-slate-300"
           >
             {isAlerting ? '模拟正常' : '模拟报警'}
           </button>

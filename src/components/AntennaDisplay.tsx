@@ -9,7 +9,7 @@ export default function AntennaDisplay() {
           <Satellite className="title-icon text-sky-500" />
           核心天线阵列可视化
         </h2>
-        <p className="text-[clamp(11px,1.0vw,14px)] text-slate-400">RF TRANSMISSION MAPPING V1.4</p>
+        <p className="text-[clamp(13px,1.1vw,18px)] text-slate-400">RF TRANSMISSION MAPPING V1.4</p>
       </div> */}
 
       <ThreeScene />

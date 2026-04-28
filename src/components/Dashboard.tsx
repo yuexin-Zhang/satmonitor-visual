@@ -26,13 +26,13 @@ export default function Dashboard() {
       <div className="relative z-10 flex flex-col h-full">
         <Header />
         
-        <main className="flex-1 p-4 grid grid-cols-12 gap-4 h-[calc(100vh-84px)]">
+        <main className="flex-1 p-4 grid grid-cols-12 gap-4 min-h-0 overflow-y-auto">
           {/* Left Column */}
           <div className="col-span-3 flex flex-col gap-3 overflow-hidden">
-            <div className="flex-[3.8] min-h-0">
+            <div className="flex-[4.5] min-h-0">
               <AntennaInfo />
             </div>
-            <div className="flex-[2.2] min-h-0">
+            <div className="flex-[1.8] min-h-0">
               <SunInterference />
             </div>
             <div className="flex-[3] min-h-0">
@@ -52,20 +52,20 @@ export default function Dashboard() {
 
           {/* Right Column */}
           <div className="col-span-3 flex flex-col gap-4 overflow-hidden">
-            <div className="flex-[2.5] min-h-0">
+            <div className="flex-[2.3] min-h-0">
               <EnvironmentalInfo />
             </div>
-            <div className="flex-[1.8] min-h-0">
+            <div className="flex-[1.9] min-h-0">
               <PowerInfo />
             </div>
-            <div className="flex-[2] min-h-0">
+            <div className="flex-[2.1] min-h-0">
               <OperationsRecord />
             </div>
           </div>
         </main>
 
         {/* Footer Status Bar */}
-        <footer className="h-10 flex justify-between items-center px-6 text-[clamp(10px,0.9vw,13px)] text-slate-500 py-1 border-t border-slate-900 bg-slate-950/80 backdrop-blur-sm">
+        <footer className="h-10 flex justify-between items-center px-6 text-[clamp(11px,0.95vw,15px)] text-slate-500 py-1 border-t border-slate-900 bg-slate-950/80 backdrop-blur-sm">
           <div className="flex space-x-6">
             <span className="flex items-center">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse"></span> NETWORK: ONLINE

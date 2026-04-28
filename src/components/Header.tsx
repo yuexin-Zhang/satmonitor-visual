@@ -1,8 +1,17 @@
 import { useState, useEffect } from 'react';
 import dayjs from 'dayjs';
+import { fetchDashboardConfig } from '@/src/api/dashboard-config';
+import type { DashboardConfig } from '@/src/api/dashboard-config';
 
 export default function Header() {
   const [time, setTime] = useState(dayjs());
+  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
+
+  useEffect(() => {
+    fetchDashboardConfig().then(setConfig).catch(() => {});
+  }, []);
+
+  const siteName = config?.siteName ?? '淳安广播转播台';
 
   useEffect(() => {
     const timer = setInterval(() => setTime(dayjs()), 1000);
@@ -10,7 +19,7 @@ export default function Header() {
   }, []);
 
   return (
-    <header className="h-30 flex items-center justify-between px-6 py-6 relative z-50 overflow-hidden">
+    <header className="h-20 flex items-center justify-between px-6 py-6 relative z-50 overflow-hidden">
       {/* 背景层 */}
       <div className="absolute inset-0 bg-gradient-to-b from-sky-950/30 via-sky-950/10 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-sky-500/60 to-transparent" />
@@ -25,8 +34,8 @@ export default function Header() {
       <div className="flex items-center gap-4 relative z-10">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 bg-sky-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
-          <div className="text-sky-300 text-[clamp(12px,0.9vw,20px)] tracking-widest font-medium">
-            淳安广播转播台
+          <div className="text-sky-300 text-[clamp(13px,1.0vw,20px)] tracking-widest font-medium">
+            {siteName}
           </div>
         </div>
       </div>

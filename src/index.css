@@ -14,7 +14,7 @@
 
 @layer base {
   html {
-    font-size: clamp(13px, 0.9vw, 18px);
+    font-size: clamp(14px, 0.95vw, 18px);
   }
   body {
     @apply bg-dash-bg text-slate-200 font-sans overflow-hidden;
