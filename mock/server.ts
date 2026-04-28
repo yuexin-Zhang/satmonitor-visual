@@ -56,9 +56,9 @@ let dashboardConfig = {
   // 气象融雪
   environment: {
     weather: [
-      { day: '今天', condition: '晴朗', temp: 24, humidity: 45, icon: 'sun' },
-      { day: '明天', condition: '多云', temp: 22, humidity: 55, icon: 'cloud' },
-      { day: '后天', condition: '小雨', temp: 19, humidity: 80, icon: 'rain' },
+      { day: '今天', condition: '晴朗', temp: 24, humidity: 45, icon: 'Sun' },
+      { day: '明天', condition: '多云', temp: 22, humidity: 55, icon: 'Cloud' },
+      { day: '后天', condition: '小雨', temp: 19, humidity: 80, icon: 'CloudRain' },
     ],
     rainSnowSensor: { status: 'clear', text: '无雨雪' },
     humidityAvg: 60,

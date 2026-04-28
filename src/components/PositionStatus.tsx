@@ -46,17 +46,17 @@ export default function PositionStatus() {
 
           <div className="grid grid-cols-2 gap-2 py-2 border-t border-dash-border/30">
           <div className="flex flex-col items-center p-2 bg-blue-500/5 rounded">
-             <span className="text-[clamp(10px,0.9vw,13px)] text-dash-text-dim">信号强度预警</span>
+             <span className="text-[clamp(12px,1.05vw,17px)] text-dash-text-dim">信号强度预警</span>
              <div className="flex items-baseline gap-1">
                <span className="text-lg font-bold text-white">{signalAlertCount}</span>
-               <span className="text-[clamp(10px,0.9vw,13px)] text-dash-text-dim">次</span>
+               <span className="text-[clamp(12px,1.05vw,17px)] text-dash-text-dim">次</span>
              </div>
           </div>
           <div className="flex flex-col items-center p-2 bg-blue-500/5 rounded">
-             <span className="text-[clamp(10px,0.9vw,13px)] text-dash-text-dim">天线偏移预警</span>
+             <span className="text-[clamp(12px,1.05vw,17px)] text-dash-text-dim">天线偏移预警</span>
              <div className="flex items-baseline gap-1">
                <span className="text-lg font-bold text-white">{offsetAlertCount}</span>
-               <span className="text-[clamp(10px,0.9vw,13px)] text-dash-text-dim">次</span>
+               <span className="text-[clamp(12px,1.05vw,17px)] text-dash-text-dim">次</span>
              </div>
           </div>
         </div>

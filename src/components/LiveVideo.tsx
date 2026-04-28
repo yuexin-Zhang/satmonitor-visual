@@ -78,7 +78,7 @@ export default function LiveVideo({
 
       <div className="flex-1 bg-black/70 relative m-3 rounded border border-slate-800 flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent z-10 pointer-events-none" />
-        <div className="absolute top-2 left-2 z-20 text-[clamp(10px,0.9vw,13px)] bg-red-600 px-1 rounded animate-pulse text-white font-bold">REC</div>
+        <div className="absolute top-2 left-2 z-20 text-[clamp(12px,1.05vw,17px)] bg-red-600 px-1 rounded animate-pulse text-white font-bold">REC</div>
 
         {/* Loading */}
         {loading && !error && (
@@ -130,7 +130,7 @@ export default function LiveVideo({
           />
         </div>
 
-        <div className="absolute bottom-2 left-2 z-20 text-[clamp(10px,0.9vw,13px)] text-white/40 font-mono flex flex-col">
+        <div className="absolute bottom-2 left-2 z-20 text-[clamp(12px,1.05vw,17px)] text-white/40 font-mono flex flex-col">
           <span>VIDEO_STREAM: {streamName}</span>
           <span>{new Date().toLocaleString('zh-CN', { hour12: false })}</span>
         </div>

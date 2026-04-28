@@ -28,7 +28,7 @@ interface RecordItem {
 }
 
 function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
-  const base = 'w-6 h-6';
+  const base = 'w-5 h-5';
   switch (type) {
     case 'heat':
       return <Flame className={`${base} text-orange-400`} strokeWidth={1.5} />;
@@ -36,9 +36,9 @@ function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
       return <PowerOff className={`${base} text-slate-300`} strokeWidth={1.5} />;
     case 'heat-fault':
       return (
-        <div className="relative w-7 h-7 flex items-center justify-center">
-          <Flame className="w-5 h-5 text-orange-400" strokeWidth={1.5} />
-          <AlertTriangle className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
+        <div className="relative w-6 h-6 flex items-center justify-center">
+          <Flame className="w-4 h-4 text-orange-400" strokeWidth={1.5} />
+          <AlertTriangle className="w-2.5 h-2.5 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
         </div>
       );
     case 'eye':
@@ -49,54 +49,54 @@ function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
       return <Thermometer className={`${base} text-cyan-300`} strokeWidth={1.5} />;
     case 'temp-fault':
       return (
-        <div className="relative w-7 h-7 flex items-center justify-center">
-          <Thermometer className="w-5 h-5 text-cyan-300" strokeWidth={1.5} />
-          <AlertTriangle className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
+        <div className="relative w-6 h-6 flex items-center justify-center">
+          <Thermometer className="w-4 h-4 text-cyan-300" strokeWidth={1.5} />
+          <AlertTriangle className="w-2.5 h-2.5 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
         </div>
       );
     case 'rain-snow':
       return <CloudRain className={`${base} text-blue-300`} strokeWidth={1.5} />;
     case 'rain-snow-fault':
       return (
-        <div className="relative w-7 h-7 flex items-center justify-center">
-          <CloudRain className="w-5 h-5 text-blue-300" strokeWidth={1.5} />
-          <AlertTriangle className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
+        <div className="relative w-6 h-6 flex items-center justify-center">
+          <CloudRain className="w-4 h-4 text-blue-300" strokeWidth={1.5} />
+          <AlertTriangle className="w-2.5 h-2.5 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
         </div>
       );
     case 'antenna':
       return <Antenna className={`${base} text-slate-200`} strokeWidth={1.5} />;
     case 'antenna-fault':
       return (
-        <div className="relative w-7 h-7 flex items-center justify-center">
-          <Antenna className="w-5 h-5 text-slate-200" strokeWidth={1.5} />
-          <AlertTriangle className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
+        <div className="relative w-6 h-6 flex items-center justify-center">
+          <Antenna className="w-4 h-4 text-slate-200" strokeWidth={1.5} />
+          <AlertTriangle className="w-2.5 h-2.5 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
         </div>
       );
     case 'power':
       return <Zap className={`${base} text-yellow-300`} strokeWidth={1.5} />;
     case 'power-fault':
       return (
-        <div className="relative w-7 h-7 flex items-center justify-center">
-          <Zap className="w-5 h-5 text-yellow-300" strokeWidth={1.5} />
-          <AlertTriangle className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
+        <div className="relative w-6 h-6 flex items-center justify-center">
+          <Zap className="w-4 h-4 text-yellow-300" strokeWidth={1.5} />
+          <AlertTriangle className="w-2.5 h-2.5 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
         </div>
       );
     case 'move':
       return <Move className={`${base} text-slate-200`} strokeWidth={1.5} />;
     case 'move-fault':
       return (
-        <div className="relative w-7 h-7 flex items-center justify-center">
-          <Move className="w-5 h-5 text-slate-200" strokeWidth={1.5} />
-          <AlertTriangle className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
+        <div className="relative w-6 h-6 flex items-center justify-center">
+          <Move className="w-4 h-4 text-slate-200" strokeWidth={1.5} />
+          <AlertTriangle className="w-2.5 h-2.5 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
         </div>
       );
     case 'signal':
       return <Signal className={`${base} text-green-300`} strokeWidth={1.5} />;
     case 'signal-fault':
       return (
-        <div className="relative w-7 h-7 flex items-center justify-center">
-          <Signal className="w-5 h-5 text-green-300" strokeWidth={1.5} />
-          <AlertTriangle className="w-3 h-3 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
+        <div className="relative w-6 h-6 flex items-center justify-center">
+          <Signal className="w-4 h-4 text-green-300" strokeWidth={1.5} />
+          <AlertTriangle className="w-2.5 h-2.5 text-red-400 absolute -bottom-0.5 -right-0.5" strokeWidth={2.5} />
         </div>
       );
     default:
@@ -251,36 +251,36 @@ export default function OperationsRecord() {
         </h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 custom-scroll">
-        <div className="space-y-5">
+      <div className="flex-1 overflow-y-auto p-2 custom-scroll">
+        <div className="space-y-2">
           {grouped.map(([date, items]) => (
             <div key={date}>
-              <div className="text-[clamp(12px,1.05vw,15px)] text-slate-300 font-medium mb-3">
+              <div className="text-[clamp(12px,1.0vw,16px)] text-slate-300 font-medium mb-1">
                 {date}
               </div>
-              <div className="space-y-4">
+              <div className="space-y-2">
                 {items.map((record) => (
                   <div key={record.id} className="flex items-start gap-3">
                     {/* Icon */}
-                    <div className="flex-shrink-0 w-7 h-7 flex items-center justify-center mt-0.5">
+                    <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
                       <RecordIcon type={record.iconType} />
                     </div>
 
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       {/* Time | Code */}
-                      <div className="text-[clamp(11px,1.0vw,14px)] text-slate-300 font-mono mb-1">
+                      <div className="text-[clamp(11px,0.9vw,14px)] text-slate-300 font-mono">
                         {record.time} | {record.code}
                       </div>
 
                       {/* Title */}
-                      <div className="text-[clamp(13px,1.1vw,16px)] text-slate-100 font-medium leading-snug mb-0.5">
+                      <div className="text-[clamp(12px,1.0vw,16px)] text-slate-100 font-medium leading-snug">
                         {record.title}
                       </div>
 
                       {/* Subtitle */}
                       {record.subtitle && (
-                        <div className="text-[clamp(11px,1.0vw,14px)] text-slate-400 leading-snug">
+                        <div className="text-[clamp(11px,0.9vw,14px)] text-slate-400 leading-snug">
                           {record.subtitle}
                         </div>
                       )}
