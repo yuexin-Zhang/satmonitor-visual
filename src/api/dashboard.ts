@@ -1,5 +1,4 @@
 import { get } from './request';
-import type { SystemData } from '@/src/components/antenna/dataGenerator';
 
 // 驾驶舱总览
 export interface OverviewData {
@@ -79,5 +78,3 @@ export interface PositionData {
 }
 export const fetchPosition = () => get<PositionData>('/dashboard/position');
 
-// 3D 系统实时数据
-export const fetchSystemData = () => get<SystemData>('/dashboard/system');

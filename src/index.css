@@ -5,7 +5,7 @@
   --font-sans: "Inter", "PingFang SC", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   
-  --color-dash-bg: #020617;
+  --color-dash-bg: #0b1122;
   --color-dash-panel: rgba(15, 23, 42, 0.5);
   --color-dash-border: rgba(56, 189, 248, 0.2);
   --color-dash-accent: #38bdf8;
@@ -54,7 +54,7 @@
 
 .panel-title {
   @apply font-semibold tracking-wider uppercase flex items-center;
-  color: var(--color-dash-accent);
+  color: #ffffff;
   font-size: clamp(14px, 1.2vw, 20px);
   text-shadow: 0 4px 18px rgba(56,189,248,0.12);
 }
@@ -62,7 +62,7 @@
 /* Ensure any h2 inside panels or glass-cards also follows the stronger title style */
 .glass-card h2,
 .panel-header h2 {
-  color: var(--color-dash-accent);
+  color: #ffffff;
   font-size: clamp(14px, 1.2vw, 20px);
   font-weight: 700;
   text-shadow: 0 4px 18px rgba(56,189,248,0.10);
@@ -131,12 +131,7 @@
 
 /* ===== Header 炫酷效果 ===== */
 .header-title {
-  background: linear-gradient(90deg, #7dd3fc 0%, #38bdf8 30%, #818cf8 60%, #c084fc 80%, #7dd3fc 100%);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 4s linear infinite;
+  color: #ffffff;
   filter: drop-shadow(0 0 20px rgba(56, 189, 248, 0.3)) drop-shadow(0 0 40px rgba(56, 189, 248, 0.1));
   position: relative;
 }

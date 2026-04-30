@@ -74,6 +74,9 @@ export default function EnvironmentalInfo() {
         {/* 雨雪传感器状态 */}
         <div className="shrink-0 flex justify-between items-center text-[clamp(11px,0.9vw,16px)] px-1 pt-1">
           <span className="text-slate-400">雨雪传感器: <span className="text-emerald-400">{rainSnowSensor.text}</span></span>
+          <span className={`px-1.5 py-0.5 rounded text-[clamp(10px,0.8vw,13px)] font-medium ${rainSnowSensor.status === 'normal' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
+            {rainSnowSensor.status === 'normal' ? '正常' : '异常'}
+          </span>
         </div>
 
         {/* 湿度柱状图 */}

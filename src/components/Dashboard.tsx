@@ -41,7 +41,7 @@ export default function Dashboard() {
           </div>
 
           {/* Center Column */}
-          <div className="col-span-6 flex flex-col gap-4 overflow-hidden relative">
+          <div className="col-span-6 flex flex-col gap-4 overflow-auto relative">
             <div className="flex-1 min-h-0">
               <AntennaDisplay />
             </div>

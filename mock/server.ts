@@ -3,7 +3,30 @@ import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { generateSystemData } from '../src/components/antenna/dataGenerator';
+function generateSystemData() {
+  return {
+    blades: Array.from({ length: 8 }, (_, i) => ({
+      bladeId: `BLADE_${String(i + 1).padStart(2, '0')}`,
+      status: Math.random() > 0.8 ? 'fault' : 'normal',
+      temperature: { current: 20 + Math.random() * 15, target: 35 },
+      heater: { power: 'off', powerLevel: 0 },
+      faultInfo: null,
+    })),
+    system: {
+      environment: { rainSnowStatus: 'clear', airTemperature: 22, dishTemperature: 25 },
+      satelliteSignal: { signalStrength: 85 },
+      attitude: { status: 'normal' },
+      displacementFault: { status: 'normal' },
+      relays: {
+        heatingRelays: [{ status: 'off' }, { status: 'off' }],
+        alarmRelay: { status: 'off' },
+      },
+      controlUnit: { status: 'normal' },
+      alarmDetector: { status: 'normal' },
+      highFrequencyFault: { status: 'normal' },
+    },
+  };
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
