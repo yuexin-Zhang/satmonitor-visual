@@ -14,8 +14,8 @@ import {
   Info,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { fetchDashboardConfig } from '@/src/api/dashboard-config';
-import type { DashboardConfig } from '@/src/api/dashboard-config';
+import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
+import type { DashboardConfig } from '@/src/http/types';
 
 interface RecordItem {
   id: string;
@@ -106,9 +106,10 @@ function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
 
 export default function OperationsRecord() {
   const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
+  const [loadTime] = useState(() => new Date());
 
   useEffect(() => {
-    fetchDashboardConfig().then(setConfig).catch(() => {});
+    setConfig(MOCK_DASHBOARD_CONFIG);
   }, []);
 
   const defaultRecords: RecordItem[] = [
@@ -244,11 +245,12 @@ export default function OperationsRecord() {
 
   return (
     <div className="glass-card h-full flex flex-col">
-      <div className="panel-header">
+      <div className="panel-header justify-between">
         <h2 className="panel-title">
           <Bell className="title-icon text-sky-500" />
           运维记录
         </h2>
+        <span className="text-[clamp(10px,0.8vw,12px)] text-slate-600 font-mono">{String(loadTime.getHours()).padStart(2,'0')}:{String(loadTime.getMinutes()).padStart(2,'0')}:{String(loadTime.getSeconds()).padStart(2,'0')}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 custom-scroll">

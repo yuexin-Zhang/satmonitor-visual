@@ -3,8 +3,10 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.tsx';
 import './index.css';
 
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+
 createRoot(document.getElementById('root')!).render(
-  <BrowserRouter basename="/satmonitor-visual">
+  <BrowserRouter basename={base}>
     <App />
   </BrowserRouter>,
 );

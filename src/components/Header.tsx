@@ -1,17 +1,23 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
-import { fetchDashboardConfig } from '@/src/api/dashboard-config';
-import type { DashboardConfig } from '@/src/api/dashboard-config';
+import { LogOut } from 'lucide-react';
+import { httpGet } from '@/src/http/client';
+import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
+import type { DashboardConfig, SystemDetail } from '@/src/http/types';
 
 export default function Header() {
+  const navigate = useNavigate();
   const [time, setTime] = useState(dayjs());
   const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
+  const [deviceData, setDeviceData] = useState<{ organizationName?: string } | null>(null);
 
   useEffect(() => {
-    fetchDashboardConfig().then(setConfig).catch(() => {});
+    setConfig(MOCK_DASHBOARD_CONFIG);
+    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => setDeviceData(data)).catch(() => {});
   }, []);
 
-  const siteName = config?.siteName ?? '淳安广播转播台';
+  const siteName = deviceData?.organizationName || config?.siteName || '淳安广播转播台';
 
   useEffect(() => {
     const timer = setInterval(() => setTime(dayjs()), 1000);
@@ -66,7 +72,7 @@ export default function Header() {
         </div>
       </div>
 
-      {/* 右侧时间区域 */}
+      {/* 右侧时间区域 + 退出登录 */}
       <div className="flex items-center gap-4 font-mono text-right relative z-10">
         <div className="hidden md:flex flex-col items-end gap-0.5">
           <div className="text-sm text-sky-400 font-medium">{time.format('YYYY.MM.DD')}</div>
@@ -75,8 +81,19 @@ export default function Header() {
           <div className="text-base md:text-2xl font-light text-white leading-none tabular-nums tracking-wider drop-shadow-[0_0_10px_rgba(56,189,248,0.5)]">
             {time.format('HH:mm:ss')}
           </div>
-          {/* <div className="absolute -bottom-1 left-0 right-0 h-px bg-gradient-to-r from-transparent via-sky-400/50 to-transparent" /> */}
         </div>
+        <button
+          onClick={() => {
+            localStorage.removeItem('monitor_token');
+            localStorage.removeItem('monitor_user');
+            navigate('/login');
+          }}
+          className="flex items-center gap-1.5 text-slate-400 hover:text-rose-400 transition-colors text-[clamp(12px,0.9vw,16px)] ml-2 cursor-pointer"
+          title="退出登录"
+        >
+          <LogOut className="w-4 h-4" />
+          <span className="hidden md:inline">退出</span>
+        </button>
       </div>
     </header>
   );

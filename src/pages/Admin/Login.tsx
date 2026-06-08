@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Shield, Eye, EyeOff } from 'lucide-react';
-import { login } from '@/src/api/admin';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -16,12 +15,14 @@ export default function AdminLogin() {
     setError('');
     setLoading(true);
     try {
-      const res = await login({ username, password });
-      localStorage.setItem('admin_token', res.token);
-      localStorage.setItem('admin_user', JSON.stringify(res.user));
-      navigate('/admin/config');
-    } catch (err: any) {
-      setError(err.message || '登录失败');
+      // 前端 mock 登录，账号 admin / admin123
+      if (username === 'admin' && password === 'admin123') {
+        localStorage.setItem('admin_token', 'mock-token');
+        localStorage.setItem('admin_user', JSON.stringify({ id: '1', username: 'admin', role: 'administrator' }));
+        navigate('/admin/home');
+      } else {
+        setError('用户名或密码错误');
+      }
     } finally {
       setLoading(false);
     }
@@ -71,7 +72,9 @@ export default function AdminLogin() {
                   {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-[clamp(14px,1.05vw,20px)] text-slate-600 mt-1.5">Mock 账号: admin / admin123</p>
+              <p className="text-[clamp(14px,1.05vw,20px)] text-slate-600 mt-1.5">
+                账号: admin / admin123
+              </p>
             </div>
 
             {error && (

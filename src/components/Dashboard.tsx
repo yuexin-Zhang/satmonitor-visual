@@ -25,7 +25,7 @@ export default function Dashboard() {
       {/* 内容层 */}
       <div className="relative z-10 flex flex-col h-full">
         <Header />
-        
+
         <main className="flex-1 p-4 grid grid-cols-12 gap-4 min-h-0 overflow-y-auto">
           {/* Left Column */}
           <div className="col-span-3 flex flex-col gap-3 overflow-hidden">

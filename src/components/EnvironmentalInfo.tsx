@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Cloud, CloudRain, Sun, Thermometer } from 'lucide-react';
-import { BarChart } from '@mui/x-charts/BarChart';
-import { fetchDashboardConfig } from '@/src/api/dashboard-config';
-import type { DashboardConfig } from '@/src/api/dashboard-config';
+import { httpGet } from '@/src/http/client';
+import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
+import type { DashboardConfig, SystemDetail } from '@/src/http/types';
+import ThresholdBarChart from './ThresholdBarChart';
 
 const iconMap: Record<string, { Icon: typeof Sun; color: string }> = {
   Sun: { Icon: Sun, color: 'text-amber-400' },
@@ -15,26 +16,58 @@ const iconMap: Record<string, { Icon: typeof Sun; color: string }> = {
   snow: { Icon: CloudRain, color: 'text-cyan-400' },
 };
 
+// 上海 6 月初真实气温 mock：当前 + 前 5 小时
+function generateShanghaiTempData(): { label: string; value: number }[] {
+  const now = new Date();
+  return Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getTime() - (5 - i) * 3600_000);
+    const hour = d.getHours();
+    // 6 月初上海气温：凌晨 ~20°C，午后 ~30°C，用 sin 近似
+    const base = 25 + 5 * Math.sin(((hour - 6) / 24) * Math.PI * 2);
+    return {
+      label: `${String(hour).padStart(2, '0')}:00`,
+      value: Math.round((base + (Math.random() - 0.5) * 2) * 10) / 10,
+    };
+  });
+}
+
+function formatRefreshTime(date: Date) {
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+}
+
 export default function EnvironmentalInfo() {
-  const [chartKey, setChartKey] = useState(0);
-  useEffect(() => {
-    setChartKey(k => k + 1);
-  }, []);
-
   const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
+  const [deviceData, setDeviceData] = useState<Partial<SystemDetail> | null>(null);
+  const [tempData, setTempData] = useState<{ label: string; value: number }[]>(() => generateShanghaiTempData());
+  const [refreshTime, setRefreshTime] = useState<Date>(new Date());
+
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchData = useCallback(() => {
+    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } })
+      .then((data) => { setDeviceData(data); setRefreshTime(new Date()); })
+      .catch(() => {});
+    // 温度数据刷新（当前无专用 API，用 mock 模拟）
+    setTempData(generateShanghaiTempData());
+  }, []);
 
   useEffect(() => {
-    fetchDashboardConfig().then(setConfig).catch(() => {});
-  }, []);
+    setConfig(MOCK_DASHBOARD_CONFIG);
+    fetchData();
+    timerRef.current = setInterval(fetchData, 3600_000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [fetchData]);
 
   const defaultWeather = [
-    { day: '今天', condition: '晴朗', temp: 24, humidity: 45, icon: 'Sun' },
-    { day: '明天', condition: '多云', temp: 22, humidity: 55, icon: 'Cloud' },
-    { day: '后天', condition: '小雨', temp: 19, humidity: 80, icon: 'CloudRain' },
+    { day: '今天', condition: '晴朗', temp: 27, humidity: 65, icon: 'Sun' },
+    { day: '明天', condition: '多云', temp: 25, humidity: 70, icon: 'Cloud' },
+    { day: '后天', condition: '小雨', temp: 23, humidity: 85, icon: 'CloudRain' },
   ];
 
   const weather = config?.environment?.weather ?? defaultWeather;
-  const rainSnowSensor = config?.environment?.rainSnowSensor ?? { status: 'normal', text: '无 雨雪' };
+  const rainSnowSensor = deviceData?.rainSnow
+    ? { status: 'normal', text: deviceData.rainSnow }
+    : (config?.environment?.rainSnowSensor ?? { status: 'normal', text: '无雨雪' });
   const humidityAvg = config?.environment?.humidityAvg ?? 60;
   const yearlyStats = config?.environment?.yearlyStats ?? {
     snowForecastDays: 3,
@@ -42,11 +75,16 @@ export default function EnvironmentalInfo() {
     meltTests: 3,
     meltExecutions: 5,
   };
+  const tempsensors = deviceData?.tempsensors ?? [];
+
+  // 温度阈值：超过 35°C 红色预警（高温）
+  const tempThreshold = 35;
 
   return (
     <div className="glass-card h-full flex flex-col">
-      <div className="panel-header">
+      <div className="panel-header justify-between">
         <h2 className="panel-title"><Thermometer className="title-icon text-sky-500" />气象&融雪</h2>
+        <span className="text-[clamp(10px,0.8vw,12px)] text-slate-600 font-mono">{formatRefreshTime(refreshTime)}</span>
       </div>
 
       <div className="panel-content flex-1 flex flex-col gap-1 overflow-y-auto p-2">
@@ -71,69 +109,48 @@ export default function EnvironmentalInfo() {
           })}
         </div>
 
-        {/* 雨雪传感器状态 */}
+        {/* 雨雪传感器 + 湿度 */}
         <div className="shrink-0 flex justify-between items-center text-[clamp(11px,0.9vw,16px)] px-1 pt-1">
           <span className="text-slate-400">雨雪传感器: <span className="text-emerald-400">{rainSnowSensor.text}</span></span>
+          <span className="text-slate-400">湿度: <span className="text-sky-400 font-mono">{humidityAvg}%</span></span>
           <span className={`px-1.5 py-0.5 rounded text-[clamp(10px,0.8vw,13px)] font-medium ${rainSnowSensor.status === 'normal' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-rose-500/15 text-rose-400'}`}>
             {rainSnowSensor.status === 'normal' ? '正常' : '异常'}
           </span>
         </div>
 
-        {/* 湿度柱状图 */}
-        <div className="shrink-0 flex flex-col">
-          <div className="flex justify-between items-center text-[clamp(11px,0.9vw,16px)] mb-1 px-1">
-            <span className="text-slate-400">湿度趋势</span>
-            <span className="text-sky-400 font-mono">AVG: {humidityAvg}%</span>
+        {/* 温度趋势柱状图（不切换范围，只显示 6 小时） */}
+        <ThresholdBarChart
+          data={tempData}
+          threshold={tempThreshold}
+          yMax={40}
+          yTickInterval={[0, 10, 20, 30, 40]}
+          title="温度趋势"
+          height={130}
+          unit="°C"
+        />
+
+        {/* 真实温度传感器 */}
+        {tempsensors.length > 0 && (
+          <div className="shrink-0 mt-1">
+            <div className="flex justify-between items-center text-[clamp(11px,0.9vw,16px)] mb-1 px-1">
+              <span className="text-slate-400">锅面温度传感器</span>
+              <span className="text-sky-400 font-mono">
+                空气: {deviceData?.airTemperature ?? '--'}°C
+                {deviceData?.potTemperature != null && deviceData.potTemperature !== -127 && (
+                  <span className="ml-2">锅面: {deviceData.potTemperature}°C</span>
+                )}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              {tempsensors.map((sensor) => (
+                <div key={sensor.id} className="flex flex-col items-center p-1.5 bg-slate-800/20 rounded border border-slate-700/30">
+                  <span className="text-[clamp(10px,0.8vw,13px)] text-slate-500">{sensor.name}</span>
+                  <span className="text-[clamp(13px,1.0vw,17px)] text-slate-200 font-mono font-bold">{sensor.value}°C</span>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="flex-1 overflow-hidden">
-            <BarChart key={chartKey}
-              xAxis={[{ scaleType: 'band', data: weather.map(d => d.day) }]}
-              series={[
-                {
-                  data: weather.map(d => d.humidity),
-                  label: '湿度',
-                  color: '#0ea5e9',
-                  barLabel: 'value',
-                  barLabelPlacement: 'outside',
-                },
-              ]}
-              height={120}
-              margin={{ top: 16, bottom: 0, left: 12, right: 10 }}
-              slotProps={{
-                legend: { hidden: true } as any,
-                tooltip: {
-                  trigger: 'none',
-                } as any,
-                barLabel: {
-                  style: { fill: '#e2e8f0', fontSize: 'clamp(11px, 0.85vw, 13px)' }
-                } as any
-              }}
-              sx={{
-                '& .MuiChartsAxis-tickLabel': {
-                  fill: '#94a3b8 !important',
-                  fontSize: 'clamp(11px, 0.9vw, 14px) !important'
-                },
-                '& .MuiChartsAxis-line': {
-                  stroke: '#1e293b !important'
-                },
-                '& .MuiChartsAxis-tick': {
-                  stroke: '#1e293b !important'
-                },
-                '.MuiChartsTooltip-paper': {
-                  backgroundColor: '#0f172a !important',
-                  color: '#e2e8f0 !important',
-                  border: '1px solid rgba(14, 165, 233, 0.3) !important',
-                  borderRadius: '4px !important',
-                  boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3) !important'
-                },
-                '.MuiChartsTooltip-table': {
-                  fontSize: 'clamp(11px, 0.9vw, 14px) !important',
-                  color: '#e2e8f0 !important'
-                }
-              }}
-            />
-          </div>
-        </div>
+        )}
 
         {/* 底部统计信息 */}
         <div className="shrink-0 relative overflow-hidden rounded-md border border-slate-700/50 bg-slate-900/20 mt-1">

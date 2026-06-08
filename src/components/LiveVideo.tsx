@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import ReactPlayer from 'react-player';
 import { Video, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
-import { fetchDashboardConfig } from '@/src/api/dashboard-config';
-import type { DashboardConfig } from '@/src/api/dashboard-config';
+import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
+import type { DashboardConfig } from '@/src/http/types';
 
 const ReactPlayerElement = ReactPlayer as any;
 
@@ -19,7 +19,7 @@ export default function LiveVideo({
   const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
 
   useEffect(() => {
-    fetchDashboardConfig().then(setConfig).catch(() => {});
+    setConfig(MOCK_DASHBOARD_CONFIG);
   }, []);
 
   const streamUrl = config?.liveVideo?.streamUrl ?? propStreamUrl;
