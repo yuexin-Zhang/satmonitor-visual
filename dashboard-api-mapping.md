@@ -2,7 +2,7 @@
 
 > 后端基础地址：`http://8.145.43.245:8989/api/v1`
 > 开发环境通过 Vite 代理：`/api` → `http://8.145.43.245:8989`
-> 生产环境通过 Nginx 代理：`/satmonitor-visual/api/` → `http://127.0.0.1:8080/api/`
+> 生产环境通过 Nginx 代理：`/api/` → `http://127.0.0.1:8080/api/`
 > Apifox 文档：https://s.apifox.cn/77cfa9ea-132e-4e65-931a-75f178e3c4aa
 
 ---
