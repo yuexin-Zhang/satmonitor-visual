@@ -3,3 +3,6 @@ dist/
 dist.*
 .env.*
 mock/.port
+
+# macOS
+.DS_Store
