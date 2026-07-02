@@ -1,18 +1,11 @@
-import { useState, useEffect } from 'react';
 import { Sun } from 'lucide-react';
-import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
-import type { DashboardConfig } from '@/src/http/types';
 
+// 日凌信息：后端 Swagger 暂无对应接口，使用中性默认值（非 mock 数据）。
+// 待后端新增 /v1/sat/sun-interference/* 后接入即可。
 export default function SunInterference() {
-  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
-
-  useEffect(() => {
-    setConfig(MOCK_DASHBOARD_CONFIG);
-  }, []);
-
-  const todayAlert = config?.sunInterference?.todayAlert ?? false;
-  const nextPeriod = config?.sunInterference?.nextPeriod ?? '3月4日—3月12日';
-  const yearlyCount = config?.sunInterference?.yearlyCount ?? 3;
+  const todayAlert = false;
+  const nextPeriod = '暂无数据';
+  const yearlyCount = 0;
   return (
     <div className="glass-card h-full flex flex-col">
       <div className="panel-header">

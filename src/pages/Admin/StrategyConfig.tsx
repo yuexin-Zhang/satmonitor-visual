@@ -1,143 +1,165 @@
-import { useState, useEffect } from 'react';
-import { Settings, Plus, Trash2, Edit2, Save, X, Check, AlertTriangle } from 'lucide-react';
-import { httpGet } from '@/src/http/client';
-import type { SensorThreshold, MeltStrategy, CaptureConfig } from '@/src/http/types';
+import { useEffect, useState, useCallback } from 'react';
+import { Settings, Save, History, RotateCcw, Radio } from 'lucide-react';
+import { thresholdApi, strategyApi, stationApi } from '@/src/http/api';
+import type { OptionLong, SatThresholdVO, SatThresholdVersionVO, SatSnowStrategyVO } from '@/src/http/types';
 
-type TabKey = 'sensor' | 'melt' | 'capture';
+type TabKey = 'threshold' | 'strategy';
 
 const TAB_LIST: { key: TabKey; label: string }[] = [
-  { key: 'sensor', label: '传感器阈值' },
-  { key: 'melt', label: '融雪策略' },
-  { key: 'capture', label: '抓拍时长' },
+  { key: 'threshold', label: '阈值配置' },
+  { key: 'strategy', label: '融雪策略' },
 ];
 
-const SENSOR_TYPE_MAP: Record<string, string> = {
-  temperature: '温度',
-  humidity: '湿度',
-  displacement: '位移',
-  signal: '信号强度',
-  voltage: '电压',
-  current: '电流',
+const SYNC_STATUS_MAP: Record<number, { label: string; color: string }> = {
+  0: { label: '待同步', color: 'bg-amber-500/10 text-amber-400 border border-amber-500/20' },
+  1: { label: '已同步', color: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' },
+  2: { label: '同步失败', color: 'bg-rose-500/10 text-rose-400 border border-rose-500/20' },
 };
 
+const RUN_MODE_MAP: Record<number, string> = { 1: '自动', 2: '禁止自动', 3: '仅手动' };
+
 export default function StrategyConfig() {
-  const [activeTab, setActiveTab] = useState<TabKey>('sensor');
+  const [activeTab, setActiveTab] = useState<TabKey>('threshold');
+  const [stationOptions, setStationOptions] = useState<OptionLong[]>([]);
+  const [stationId, setStationId] = useState<number | undefined>(undefined);
 
-  // 传感器阈值
-  const [sensorList, setSensorList] = useState<SensorThreshold[]>([]);
-  const [sensorEditingId, setSensorEditingId] = useState<string | null>(null);
-  const [sensorEditForm, setSensorEditForm] = useState<Partial<SensorThreshold>>({});
-  const [showAddSensor, setShowAddSensor] = useState(false);
-  const [newSensor, setNewSensor] = useState<SensorThreshold>({
-    id: '',
-    name: '',
-    type: 'temperature',
-    minValue: 0,
-    maxValue: 100,
-    alertLevel: 'warning',
-    enabled: true,
-  });
+  // 阈值
+  const [threshold, setThreshold] = useState<SatThresholdVO | null>(null);
+  const [thresholdConfig, setThresholdConfig] = useState('');
+  const [versions, setVersions] = useState<SatThresholdVersionVO[]>([]);
 
-  // 融雪策略
-  const [meltList, setMeltList] = useState<MeltStrategy[]>([]);
-  const [meltEditingId, setMeltEditingId] = useState<string | null>(null);
-  const [meltEditForm, setMeltEditForm] = useState<Partial<MeltStrategy>>({});
-  const [showAddMelt, setShowAddMelt] = useState(false);
-  const [newMelt, setNewMelt] = useState<MeltStrategy>({
-    id: '',
-    name: '',
-    triggerType: 'auto',
-    tempThreshold: 2,
-    snowDetectEnabled: true,
-    maxMeltDuration: 60,
-    scheduleTime: '06:00',
-    enabled: true,
-  });
+  // 策略
+  const [strategy, setStrategy] = useState<SatSnowStrategyVO | null>(null);
+  const [strategyConfig, setStrategyConfig] = useState('');
+  const [runMode, setRunMode] = useState(1);
+  const [strategyName, setStrategyName] = useState('');
 
-  // 抓拍配置
-  const [captureList, setCaptureList] = useState<CaptureConfig[]>([]);
-  const [captureEditingId, setCaptureEditingId] = useState<string | null>(null);
-  const [captureEditForm, setCaptureEditForm] = useState<Partial<CaptureConfig>>({});
-  const [showAddCapture, setShowAddCapture] = useState(false);
-  const [newCapture, setNewCapture] = useState<CaptureConfig>({
-    id: '',
-    cameraName: '',
-    captureDuration: 5,
-    captureInterval: 30,
-    storageDays: 30,
-    enabled: true,
-  });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    httpGet<SensorThreshold[]>('/admin/sensor-thresholds').then(setSensorList).catch(() => {});
-    httpGet<MeltStrategy[]>('/admin/melt-strategies').then(setMeltList).catch(() => {});
-    httpGet<CaptureConfig[]>('/admin/capture-configs').then(setCaptureList).catch(() => {});
+    stationApi.getOptions().then((opts) => {
+      setStationOptions(opts);
+      if (opts.length > 0) setStationId(opts[0].value);
+    });
   }, []);
 
+  const loadThreshold = useCallback(async () => {
+    if (!stationId) return;
+    try {
+      const [th, vers] = await Promise.all([
+        thresholdApi.get(stationId).catch(() => null),
+        thresholdApi.getVersions(stationId).catch(() => []),
+      ]);
+      setThreshold(th);
+      setThresholdConfig(th?.config ? JSON.stringify(th.config, null, 2) : '{}');
+      setVersions(vers || []);
+    } catch (err) {
+      console.error('加载阈值失败', err);
+    }
+  }, [stationId]);
+
+  const loadStrategy = useCallback(async () => {
+    if (!stationId) return;
+    try {
+      const st = await strategyApi.get(stationId).catch(() => null);
+      setStrategy(st);
+      setStrategyConfig(st?.config ? JSON.stringify(st.config, null, 2) : '{}');
+      setRunMode(st?.runMode ?? 1);
+      setStrategyName(st?.name ?? '');
+    } catch (err) {
+      console.error('加载策略失败', err);
+    }
+  }, [stationId]);
+
+  useEffect(() => {
+    if (stationId) {
+      loadThreshold();
+      loadStrategy();
+    }
+  }, [stationId, loadThreshold, loadStrategy]);
+
+  const handleSaveThreshold = async () => {
+    if (!stationId) return;
+    let config;
+    try {
+      config = JSON.parse(thresholdConfig);
+    } catch {
+      alert('阈值配置 JSON 格式错误');
+      return;
+    }
+    setSaving(true);
+    try {
+      await thresholdApi.update({ stationId, config });
+      loadThreshold();
+      alert('阈值配置已保存并下发');
+    } catch (err) {
+      console.error('保存阈值失败', err);
+      alert('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveStrategy = async () => {
+    if (!stationId) return;
+    let config;
+    try {
+      config = JSON.parse(strategyConfig);
+    } catch {
+      alert('策略配置 JSON 格式错误');
+      return;
+    }
+    setSaving(true);
+    try {
+      await strategyApi.update({ stationId, name: strategyName, config, runMode });
+      loadStrategy();
+      alert('融雪策略已保存并下发');
+    } catch (err) {
+      console.error('保存策略失败', err);
+      alert('保存失败');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRollback = async (versionId: number) => {
+    if (!stationId) return;
+    if (!confirm('确定回滚到该版本吗？')) return;
+    try {
+      await thresholdApi.rollback(stationId, versionId);
+      loadThreshold();
+      alert('已回滚');
+    } catch (err) {
+      console.error('回滚失败', err);
+      alert('回滚失败');
+    }
+  };
+
   const inputClass =
-    'w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-[clamp(14px,1.05vw,20px)] text-slate-200 focus:outline-none focus:border-sky-500/50';
-
-  // ---------- 传感器阈值操作 ----------
-  const handleSaveSensor = (id: string) => {
-    setSensorList((prev) =>
-      prev.map((s) => (s.id === id ? ({ ...s, ...sensorEditForm } as SensorThreshold) : s))
-    );
-    setSensorEditingId(null);
-  };
-  const handleDeleteSensor = (id: string) => {
-    if (!confirm('确定删除该阈值配置吗？')) return;
-    setSensorList((prev) => prev.filter((s) => s.id !== id));
-  };
-  const handleAddSensor = () => {
-    if (!newSensor.name.trim()) return;
-    setSensorList((prev) => [...prev, { ...newSensor, id: Date.now().toString() }]);
-    setShowAddSensor(false);
-    setNewSensor({ id: '', name: '', type: 'temperature', minValue: 0, maxValue: 100, alertLevel: 'warning', enabled: true });
-  };
-
-  // ---------- 融雪策略操作 ----------
-  const handleSaveMelt = (id: string) => {
-    setMeltList((prev) =>
-      prev.map((s) => (s.id === id ? ({ ...s, ...meltEditForm } as MeltStrategy) : s))
-    );
-    setMeltEditingId(null);
-  };
-  const handleDeleteMelt = (id: string) => {
-    if (!confirm('确定删除该融雪策略吗？')) return;
-    setMeltList((prev) => prev.filter((s) => s.id !== id));
-  };
-  const handleAddMelt = () => {
-    if (!newMelt.name.trim()) return;
-    setMeltList((prev) => [...prev, { ...newMelt, id: Date.now().toString() }]);
-    setShowAddMelt(false);
-    setNewMelt({ id: '', name: '', triggerType: 'auto', tempThreshold: 2, snowDetectEnabled: true, maxMeltDuration: 60, scheduleTime: '06:00', enabled: true });
-  };
-
-  // ---------- 抓拍配置操作 ----------
-  const handleSaveCapture = (id: string) => {
-    setCaptureList((prev) =>
-      prev.map((s) => (s.id === id ? ({ ...s, ...captureEditForm } as CaptureConfig) : s))
-    );
-    setCaptureEditingId(null);
-  };
-  const handleDeleteCapture = (id: string) => {
-    if (!confirm('确定删除该抓拍配置吗？')) return;
-    setCaptureList((prev) => prev.filter((s) => s.id !== id));
-  };
-  const handleAddCapture = () => {
-    if (!newCapture.cameraName.trim()) return;
-    setCaptureList((prev) => [...prev, { ...newCapture, id: Date.now().toString() }]);
-    setShowAddCapture(false);
-    setNewCapture({ id: '', cameraName: '', captureDuration: 5, captureInterval: 30, storageDays: 30, enabled: true });
-  };
+    'bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-[clamp(14px,1.05vw,20px)] text-slate-200 focus:outline-none focus:border-sky-500/50';
 
   return (
     <div className="pt-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-[clamp(18px,1.3vw,26px)] font-medium text-slate-100 flex items-center gap-2">
           <Settings className="w-5 h-5 text-sky-500" />
-          策略配置
+          阈值/策略配置
         </h2>
+      </div>
+
+      {/* 台站选择 */}
+      <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 mb-4 flex items-center gap-3">
+        <Radio className="w-4 h-4 text-sky-500" />
+        <label className="text-[clamp(14px,1.05vw,20px)] text-slate-400">选择台站</label>
+        <select
+          value={stationId ?? ''}
+          onChange={(e) => setStationId(e.target.value ? Number(e.target.value) : undefined)}
+          className={`${inputClass} min-w-[200px]`}
+        >
+          {stationOptions.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* Tab 切换 */}
@@ -157,243 +179,115 @@ export default function StrategyConfig() {
         ))}
       </div>
 
-      {/* ========== 传感器阈值 ========== */}
-      {activeTab === 'sensor' && (
-        <div className="space-y-4">
-          <div className="flex justify-end">
-            <button
-              onClick={() => setShowAddSensor(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-[clamp(14px,1.05vw,20px)] text-white transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              新增阈值
-            </button>
-          </div>
-
-          {showAddSensor && (
+      {/* ========== 阈值配置 ========== */}
+      {activeTab === 'threshold' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 space-y-4">
             <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
-              <h3 className="text-slate-300 font-medium mb-3">新增传感器阈值</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <input value={newSensor.name} onChange={(e) => setNewSensor({ ...newSensor, name: e.target.value })} className={inputClass} placeholder="传感器名称" />
-                <select value={newSensor.type} onChange={(e) => setNewSensor({ ...newSensor, type: e.target.value })} className={inputClass}>
-                  {Object.entries(SENSOR_TYPE_MAP).map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
-                <input type="number" value={newSensor.minValue} onChange={(e) => setNewSensor({ ...newSensor, minValue: Number(e.target.value) })} className={inputClass} placeholder="最小值" />
-                <input type="number" value={newSensor.maxValue} onChange={(e) => setNewSensor({ ...newSensor, maxValue: Number(e.target.value) })} className={inputClass} placeholder="最大值" />
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[clamp(16px,1.2vw,24px)] font-medium text-slate-200">阈值配置 (JSON)</h3>
+                {threshold && (
+                  <div className="flex items-center gap-3 text-[clamp(14px,1.05vw,20px)]">
+                    <span className="text-slate-500">版本: v{threshold.version}</span>
+                    <span className={`inline-flex px-2 py-0.5 rounded ${SYNC_STATUS_MAP[threshold.syncStatus ?? 0]?.color || ''}`}>
+                      {SYNC_STATUS_MAP[threshold.syncStatus ?? 0]?.label || '--'}
+                    </span>
+                  </div>
+                )}
               </div>
+              <textarea
+                value={thresholdConfig}
+                onChange={(e) => setThresholdConfig(e.target.value)}
+                rows={18}
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-[clamp(14px,1.05vw,20px)] text-emerald-300 font-mono focus:outline-none focus:border-sky-500/50"
+                placeholder='{"signalMin": 70, "tempMax": 60}'
+              />
               <div className="flex gap-2 mt-4">
-                <button onClick={handleAddSensor} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[clamp(14px,1.05vw,20px)]"><Check className="w-4 h-4 inline mr-1" />确认</button>
-                <button onClick={() => setShowAddSensor(false)} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[clamp(14px,1.05vw,20px)]"><X className="w-4 h-4 inline mr-1" />取消</button>
+                <button
+                  onClick={handleSaveThreshold}
+                  disabled={saving}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-[clamp(14px,1.05vw,20px)]"
+                >
+                  <Save className="w-4 h-4" />保存并下发
+                </button>
               </div>
             </div>
-          )}
+          </div>
 
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-            <table className="w-full text-[clamp(14px,1.05vw,20px)]">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-500">
-                  <th className="text-left px-5 py-3">名称</th>
-                  <th className="text-left px-5 py-3">类型</th>
-                  <th className="text-left px-5 py-3">最小值</th>
-                  <th className="text-left px-5 py-3">最大值</th>
-                  <th className="text-left px-5 py-3">告警级别</th>
-                  <th className="text-left px-5 py-3">状态</th>
-                  <th className="text-right px-5 py-3">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {sensorList.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-5 py-3">
-                      {sensorEditingId === item.id ? (
-                        <input value={sensorEditForm.name || ''} onChange={(e) => setSensorEditForm({ ...sensorEditForm, name: e.target.value })} className={inputClass} />
-                      ) : (
-                        <span className="text-slate-200">{item.name}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-slate-400">{SENSOR_TYPE_MAP[item.type] || item.type}</td>
-                    <td className="px-5 py-3">
-                      {sensorEditingId === item.id ? (
-                        <input type="number" value={sensorEditForm.minValue ?? item.minValue} onChange={(e) => setSensorEditForm({ ...sensorEditForm, minValue: Number(e.target.value) })} className={inputClass} />
-                      ) : (
-                        <span className="text-slate-300">{item.minValue}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {sensorEditingId === item.id ? (
-                        <input type="number" value={sensorEditForm.maxValue ?? item.maxValue} onChange={(e) => setSensorEditForm({ ...sensorEditForm, maxValue: Number(e.target.value) })} className={inputClass} />
-                      ) : (
-                        <span className="text-slate-300">{item.maxValue}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {sensorEditingId === item.id ? (
-                        <select value={sensorEditForm.alertLevel || item.alertLevel} onChange={(e) => setSensorEditForm({ ...sensorEditForm, alertLevel: e.target.value as 'warning' | 'danger' })} className={inputClass}>
-                          <option value="warning">警告</option>
-                          <option value="danger">危险</option>
-                        </select>
-                      ) : (
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded ${item.alertLevel === 'danger' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
-                          <AlertTriangle className="w-3 h-3" />
-                          {item.alertLevel === 'danger' ? '危险' : '警告'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded ${item.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'}`}>
-                        {item.enabled ? '启用' : '禁用'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      {sensorEditingId === item.id ? (
-                        <button onClick={() => handleSaveSensor(item.id)} className="text-emerald-400 hover:text-emerald-300 mr-3"><Save className="w-4 h-4" /></button>
-                      ) : (
-                        <button onClick={() => { setSensorEditingId(item.id); setSensorEditForm({ ...item }); }} className="text-sky-400 hover:text-sky-300 mr-3"><Edit2 className="w-4 h-4" /></button>
-                      )}
-                      <button onClick={() => handleDeleteSensor(item.id)} className="text-rose-400 hover:text-rose-300"><Trash2 className="w-4 h-4" /></button>
-                    </td>
-                  </tr>
-                ))}
-                {sensorList.length === 0 && (
-                  <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">暂无传感器阈值配置</td></tr>
-                )}
-              </tbody>
-            </table>
+          {/* 版本历史 */}
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
+            <h3 className="text-[clamp(16px,1.2vw,24px)] font-medium text-slate-200 mb-3 flex items-center gap-2">
+              <History className="w-4 h-4 text-sky-500" />版本历史
+            </h3>
+            <div className="space-y-2 max-h-[500px] overflow-y-auto">
+              {versions.map((v) => (
+                <div key={v.id} className="bg-slate-950 border border-slate-800 rounded-lg p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[clamp(14px,1.05vw,20px)] text-sky-400 font-medium">v{v.version}</span>
+                    <button
+                      onClick={() => handleRollback(v.id)}
+                      className="text-amber-400 hover:text-amber-300 text-[clamp(14px,1.05vw,20px)] flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3 h-3" />回滚
+                    </button>
+                  </div>
+                  <p className="text-[clamp(14px,1.05vw,20px)] text-slate-500">{v.createTime || '--'}</p>
+                </div>
+              ))}
+              {versions.length === 0 && (
+                <p className="text-center text-slate-500 py-6 text-[clamp(14px,1.05vw,20px)]">暂无版本历史</p>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* ========== 融雪策略 ========== */}
-      {activeTab === 'melt' && (
-        <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={() => setShowAddMelt(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-[clamp(14px,1.05vw,20px)] text-white transition-colors">
-              <Plus className="w-4 h-4" />新增策略
-            </button>
+      {activeTab === 'strategy' && (
+        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-[clamp(16px,1.2vw,24px)] font-medium text-slate-200">融雪策略配置</h3>
+            {strategy && (
+              <div className="flex items-center gap-3 text-[clamp(14px,1.05vw,20px)]">
+                <span className="text-slate-500">版本: v{strategy.version}</span>
+                <span className={`inline-flex px-2 py-0.5 rounded ${SYNC_STATUS_MAP[strategy.syncStatus ?? 0]?.color || ''}`}>
+                  {SYNC_STATUS_MAP[strategy.syncStatus ?? 0]?.label || '--'}
+                </span>
+              </div>
+            )}
           </div>
 
-          {showAddMelt && (
-            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
-              <h3 className="text-slate-300 font-medium mb-3">新增融雪策略</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input value={newMelt.name} onChange={(e) => setNewMelt({ ...newMelt, name: e.target.value })} className={inputClass} placeholder="策略名称" />
-                <select value={newMelt.triggerType} onChange={(e) => setNewMelt({ ...newMelt, triggerType: e.target.value as 'auto' | 'manual' | 'schedule' })} className={inputClass}>
-                  <option value="auto">自动</option>
-                  <option value="manual">手动</option>
-                  <option value="schedule">定时</option>
-                </select>
-                <input type="number" value={newMelt.tempThreshold} onChange={(e) => setNewMelt({ ...newMelt, tempThreshold: Number(e.target.value) })} className={inputClass} placeholder="温度阈值(°C)" />
-                <input type="number" value={newMelt.maxMeltDuration} onChange={(e) => setNewMelt({ ...newMelt, maxMeltDuration: Number(e.target.value) })} className={inputClass} placeholder="最大时长(分钟)" />
-                <input type="time" value={newMelt.scheduleTime} onChange={(e) => setNewMelt({ ...newMelt, scheduleTime: e.target.value })} className={inputClass} />
-              </div>
-              <div className="flex gap-2 mt-4">
-                <button onClick={handleAddMelt} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[clamp(14px,1.05vw,20px)]"><Check className="w-4 h-4 inline mr-1" />确认</button>
-                <button onClick={() => setShowAddMelt(false)} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[clamp(14px,1.05vw,20px)]"><X className="w-4 h-4 inline mr-1" />取消</button>
-              </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-[clamp(14px,1.05vw,20px)] text-slate-500 mb-1">策略名称</label>
+              <input value={strategyName} onChange={(e) => setStrategyName(e.target.value)} className={`${inputClass} w-full`} placeholder="策略名称" />
             </div>
-          )}
-
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-            <table className="w-full text-[clamp(14px,1.05vw,20px)]">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-500">
-                  <th className="text-left px-5 py-3">策略名称</th>
-                  <th className="text-left px-5 py-3">触发方式</th>
-                  <th className="text-left px-5 py-3">温度阈值</th>
-                  <th className="text-left px-5 py-3">最大时长</th>
-                  <th className="text-left px-5 py-3">雪检</th>
-                  <th className="text-left px-5 py-3">状态</th>
-                  <th className="text-right px-5 py-3">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {meltList.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-5 py-3 text-slate-200">{item.name}</td>
-                    <td className="px-5 py-3 text-slate-400">{item.triggerType === 'auto' ? '自动' : item.triggerType === 'manual' ? '手动' : '定时'}</td>
-                    <td className="px-5 py-3 text-slate-300">{item.tempThreshold}°C</td>
-                    <td className="px-5 py-3 text-slate-300">{item.maxMeltDuration}分钟</td>
-                    <td className="px-5 py-3 text-slate-300">{item.snowDetectEnabled ? '启用' : '禁用'}</td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded ${item.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'}`}>
-                        {item.enabled ? '启用' : '禁用'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <button onClick={() => handleDeleteMelt(item.id)} className="text-rose-400 hover:text-rose-300"><Trash2 className="w-4 h-4" /></button>
-                    </td>
-                  </tr>
+            <div>
+              <label className="block text-[clamp(14px,1.05vw,20px)] text-slate-500 mb-1">运行模式</label>
+              <select value={runMode} onChange={(e) => setRunMode(Number(e.target.value))} className={`${inputClass} w-full`}>
+                {Object.entries(RUN_MODE_MAP).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
                 ))}
-                {meltList.length === 0 && (
-                  <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">暂无融雪策略</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* ========== 抓拍时长 ========== */}
-      {activeTab === 'capture' && (
-        <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={() => setShowAddCapture(true)} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-[clamp(14px,1.05vw,20px)] text-white transition-colors">
-              <Plus className="w-4 h-4" />新增配置
-            </button>
-          </div>
-
-          {showAddCapture && (
-            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-5">
-              <h3 className="text-slate-300 font-medium mb-3">新增抓拍配置</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <input value={newCapture.cameraName} onChange={(e) => setNewCapture({ ...newCapture, cameraName: e.target.value })} className={inputClass} placeholder="摄像头名称" />
-                <input type="number" value={newCapture.captureDuration} onChange={(e) => setNewCapture({ ...newCapture, captureDuration: Number(e.target.value) })} className={inputClass} placeholder="抓拍时长(秒)" />
-                <input type="number" value={newCapture.captureInterval} onChange={(e) => setNewCapture({ ...newCapture, captureInterval: Number(e.target.value) })} className={inputClass} placeholder="抓拍间隔(秒)" />
-                <input type="number" value={newCapture.storageDays} onChange={(e) => setNewCapture({ ...newCapture, storageDays: Number(e.target.value) })} className={inputClass} placeholder="存储天数" />
-              </div>
-              <div className="flex gap-2 mt-4">
-                <button onClick={handleAddCapture} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[clamp(14px,1.05vw,20px)]"><Check className="w-4 h-4 inline mr-1" />确认</button>
-                <button onClick={() => setShowAddCapture(false)} className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[clamp(14px,1.05vw,20px)]"><X className="w-4 h-4 inline mr-1" />取消</button>
-              </div>
+              </select>
             </div>
-          )}
+          </div>
 
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl overflow-hidden">
-            <table className="w-full text-[clamp(14px,1.05vw,20px)]">
-              <thead>
-                <tr className="border-b border-slate-800 text-slate-500">
-                  <th className="text-left px-5 py-3">摄像头</th>
-                  <th className="text-left px-5 py-3">抓拍时长</th>
-                  <th className="text-left px-5 py-3">抓拍间隔</th>
-                  <th className="text-left px-5 py-3">存储天数</th>
-                  <th className="text-left px-5 py-3">状态</th>
-                  <th className="text-right px-5 py-3">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {captureList.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-5 py-3 text-slate-200">{item.cameraName}</td>
-                    <td className="px-5 py-3 text-slate-300">{item.captureDuration}秒</td>
-                    <td className="px-5 py-3 text-slate-300">{item.captureInterval}秒</td>
-                    <td className="px-5 py-3 text-slate-300">{item.storageDays}天</td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded ${item.enabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'}`}>
-                        {item.enabled ? '启用' : '禁用'}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <button onClick={() => handleDeleteCapture(item.id)} className="text-rose-400 hover:text-rose-300"><Trash2 className="w-4 h-4" /></button>
-                    </td>
-                  </tr>
-                ))}
-                {captureList.length === 0 && (
-                  <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-500">暂无抓拍配置</td></tr>
-                )}
-              </tbody>
-            </table>
+          <label className="block text-[clamp(14px,1.05vw,20px)] text-slate-500 mb-1">策略配置 (JSON)</label>
+          <textarea
+            value={strategyConfig}
+            onChange={(e) => setStrategyConfig(e.target.value)}
+            rows={14}
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-[clamp(14px,1.05vw,20px)] text-emerald-300 font-mono focus:outline-none focus:border-sky-500/50"
+            placeholder='{"tempThreshold": 2, "maxDuration": 120}'
+          />
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={handleSaveStrategy}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-[clamp(14px,1.05vw,20px)]"
+            >
+              <Save className="w-4 h-4" />保存并下发
+            </button>
           </div>
         </div>
       )}

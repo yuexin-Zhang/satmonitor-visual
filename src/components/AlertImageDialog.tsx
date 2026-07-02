@@ -1,13 +1,17 @@
-import { X } from 'lucide-react';
+import { X, Loader2, AlertTriangle } from 'lucide-react';
 
 interface AlertImageDialogProps {
   open: boolean;
   imageUrl: string;
   title: string;
+  /** 抓图加载中（调 cameraApi.capture 期间） */
+  loading?: boolean;
+  /** 抓图失败的提示文案，非空时展示错误占位 */
+  errorText?: string;
   onClose: () => void;
 }
 
-export default function AlertImageDialog({ open, imageUrl, title, onClose }: AlertImageDialogProps) {
+export default function AlertImageDialog({ open, imageUrl, title, loading, errorText, onClose }: AlertImageDialogProps) {
   if (!open) return null;
 
   return (
@@ -30,11 +34,23 @@ export default function AlertImageDialog({ open, imageUrl, title, onClose }: Ale
 
         {/* 图片区域 — 无滚动条，填满容器 */}
         <div className="relative flex-1 bg-slate-950 border-x border-b border-slate-700 rounded-b-lg overflow-hidden">
-          <img
-            src={imageUrl}
-            alt={title}
-            className="w-full h-full object-cover"
-          />
+          {loading ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80">
+              <Loader2 className="w-10 h-10 animate-spin mb-3 text-sky-400" />
+              <span className="text-sm">正在获取实时抓拍画面...</span>
+            </div>
+          ) : errorText ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-white/80 px-6 text-center">
+              <AlertTriangle className="w-10 h-10 text-amber-400 mb-3" />
+              <p className="text-sm whitespace-pre-wrap leading-relaxed">{errorText}</p>
+            </div>
+          ) : (
+            <img
+              src={imageUrl}
+              alt={title}
+              className="w-full h-full object-cover"
+            />
+          )}
         </div>
       </div>
     </div>

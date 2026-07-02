@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Cloud, CloudRain, Sun, Thermometer } from 'lucide-react';
-import { httpGet } from '@/src/http/client';
-import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
-import type { DashboardConfig, SystemDetail } from '@/src/http/types';
+import { httpGet, getStationIdFromStorage } from '@/src/http/client';
+import { snowApi, snowExecLogApi } from '@/src/http/api';
+import type { SystemDetail, TemperatureChartItem } from '@/src/http/types';
 import ThresholdBarChart from './ThresholdBarChart';
 
 const iconMap: Record<string, { Icon: typeof Sun; color: string }> = {
@@ -16,19 +16,40 @@ const iconMap: Record<string, { Icon: typeof Sun; color: string }> = {
   snow: { Icon: CloudRain, color: 'text-cyan-400' },
 };
 
-// 上海 6 月初真实气温 mock：当前 + 前 5 小时
-function generateShanghaiTempData(): { label: string; value: number }[] {
-  const now = new Date();
-  return Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getTime() - (5 - i) * 3600_000);
-    const hour = d.getHours();
-    // 6 月初上海气温：凌晨 ~20°C，午后 ~30°C，用 sin 近似
-    const base = 25 + 5 * Math.sin(((hour - 6) / 24) * Math.PI * 2);
-    return {
-      label: `${String(hour).padStart(2, '0')}:00`,
-      value: Math.round((base + (Math.random() - 0.5) * 2) * 10) / 10,
-    };
-  });
+// 温度阈值：超过 35°C 红色预警（高温）
+const TEMP_THRESHOLD = 35;
+
+// 以下指标后端暂无对应接口，使用中性默认值（非 mock 数据）：
+// - 三天天气（Swagger 无天气接口）
+// - 湿度（SystemDetail 暂无 humidity 字段）
+// - 天气预测有雪天数 / 实测有雪累计次数
+const DEFAULT_WEATHER = [
+  { day: '今天', condition: '晴朗', temp: 27, humidity: 65, icon: 'Sun' },
+  { day: '明天', condition: '多云', temp: 25, humidity: 70, icon: 'Cloud' },
+  { day: '后天', condition: '小雨', temp: 23, humidity: 85, icon: 'CloudRain' },
+];
+const DEFAULT_HUMIDITY = 60;
+const DEFAULT_YEARLY_STATS = {
+  snowForecastDays: 0,
+  snowDetectedCount: 0,
+  meltTests: 0,
+  meltExecutions: 0,
+};
+
+// 将 /v1/snow/temperature-chart-by-level 响应转为图表数据
+// 优先使用空气温度传感器（air/空气/airTemperature）
+function toTempChartData(rows: TemperatureChartItem[]): { label: string; value: number }[] {
+  if (!rows || rows.length === 0) return [];
+  const airRows = rows.filter((r) =>
+    /air|空气/i.test(r.sensorName || '') || r.sensorName === 'airTemperature'
+  );
+  const picked = airRows.length > 0 ? airRows : rows;
+  const byTime = new Map<string, number>();
+  for (const r of picked) {
+    const label = (r.time || '').slice(11, 16) || r.time;
+    if (label) byTime.set(label, r.temperature);
+  }
+  return Array.from(byTime.entries()).map(([label, value]) => ({ label, value: Math.round(value * 10) / 10 }));
 }
 
 function formatRefreshTime(date: Date) {
@@ -36,49 +57,72 @@ function formatRefreshTime(date: Date) {
 }
 
 export default function EnvironmentalInfo() {
-  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
   const [deviceData, setDeviceData] = useState<Partial<SystemDetail> | null>(null);
-  const [tempData, setTempData] = useState<{ label: string; value: number }[]>(() => generateShanghaiTempData());
+  const [tempData, setTempData] = useState<{ label: string; value: number }[]>([]);
   const [refreshTime, setRefreshTime] = useState<Date>(new Date());
+  // 年度融雪统计：meltTests(自测 execType=3) / meltExecutions(全部) 来自 /v1/sat/snow-exec-logs/page
+  const [yearlyStats, setYearlyStats] = useState(DEFAULT_YEARLY_STATS);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // 年度融雪统计：分别按 execType=3（自测）和全部统计 total
+  const fetchSnowStats = useCallback(async () => {
+    const stationId = getStationIdFromStorage();
+    try {
+      const [testsRes, allRes] = await Promise.all([
+        snowExecLogApi.getPage({ pageNum: 1, pageSize: 1, stationId, execType: 3 }).catch(() => null),
+        snowExecLogApi.getPage({ pageNum: 1, pageSize: 1, stationId }).catch(() => null),
+      ]);
+      setYearlyStats((prev) => ({
+        ...prev,
+        meltTests: testsRes?.total ?? prev.meltTests,
+        meltExecutions: allRes?.total ?? prev.meltExecutions,
+      }));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const fetchTempHistory = useCallback(() => {
+    const now = new Date();
+    const start = new Date(now.getTime() - 5 * 3600_000); // 最近 6 小时
+    snowApi.getTemperatureChartByLevel({
+      tag: 1,
+      startTime: start.toISOString().slice(0, 10) + ' 00:00:00',
+      endTime: now.toISOString().slice(0, 10) + ' 23:59:59',
+      timeLevel: 1,
+    })
+      .then((rows) => {
+        const chart = toTempChartData(rows);
+        setTempData(chart); // 接口无数据时为空数组，由空状态占位
+      })
+      .catch(() => setTempData([]));
+  }, []);
 
   const fetchData = useCallback(() => {
     httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } })
       .then((data) => { setDeviceData(data); setRefreshTime(new Date()); })
       .catch(() => {});
-    // 温度数据刷新（当前无专用 API，用 mock 模拟）
-    setTempData(generateShanghaiTempData());
-  }, []);
+    fetchTempHistory();
+    fetchSnowStats();
+  }, [fetchTempHistory, fetchSnowStats]);
 
   useEffect(() => {
-    setConfig(MOCK_DASHBOARD_CONFIG);
     fetchData();
     timerRef.current = setInterval(fetchData, 3600_000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchData]);
 
-  const defaultWeather = [
-    { day: '今天', condition: '晴朗', temp: 27, humidity: 65, icon: 'Sun' },
-    { day: '明天', condition: '多云', temp: 25, humidity: 70, icon: 'Cloud' },
-    { day: '后天', condition: '小雨', temp: 23, humidity: 85, icon: 'CloudRain' },
-  ];
-
-  const weather = config?.environment?.weather ?? defaultWeather;
+  const weather = DEFAULT_WEATHER;
   const rainSnowSensor = deviceData?.rainSnow
     ? { status: 'normal', text: deviceData.rainSnow }
-    : (config?.environment?.rainSnowSensor ?? { status: 'normal', text: '无雨雪' });
-  const humidityAvg = config?.environment?.humidityAvg ?? 60;
-  const yearlyStats = config?.environment?.yearlyStats ?? {
-    snowForecastDays: 3,
-    snowDetectedCount: 5,
-    meltTests: 3,
-    meltExecutions: 5,
-  };
+    : { status: 'normal', text: '无雨雪' };
+  const humidityAvg = DEFAULT_HUMIDITY;
   const tempsensors = deviceData?.tempsensors ?? [];
 
-  // 温度阈值：超过 35°C 红色预警（高温）
-  const tempThreshold = 35;
+  const tempThreshold = TEMP_THRESHOLD;
+  // 温度图表数据：接口无数据时显示空状态占位
+  const tempChartData = tempData.length > 0 ? tempData : [{ label: '暂无数据', value: 0 }];
 
   return (
     <div className="glass-card h-full flex flex-col">
@@ -120,7 +164,7 @@ export default function EnvironmentalInfo() {
 
         {/* 温度趋势柱状图（不切换范围，只显示 6 小时） */}
         <ThresholdBarChart
-          data={tempData}
+          data={tempChartData}
           threshold={tempThreshold}
           yMax={40}
           yTickInterval={[0, 10, 20, 30, 40]}
@@ -128,29 +172,6 @@ export default function EnvironmentalInfo() {
           height={130}
           unit="°C"
         />
-
-        {/* 真实温度传感器 */}
-        {tempsensors.length > 0 && (
-          <div className="shrink-0 mt-1">
-            <div className="flex justify-between items-center text-[clamp(11px,0.9vw,16px)] mb-1 px-1">
-              <span className="text-slate-400">锅面温度传感器</span>
-              <span className="text-sky-400 font-mono">
-                空气: {deviceData?.airTemperature ?? '--'}°C
-                {deviceData?.potTemperature != null && deviceData.potTemperature !== -127 && (
-                  <span className="ml-2">锅面: {deviceData.potTemperature}°C</span>
-                )}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {tempsensors.map((sensor) => (
-                <div key={sensor.id} className="flex flex-col items-center p-1.5 bg-slate-800/20 rounded border border-slate-700/30">
-                  <span className="text-[clamp(10px,0.8vw,13px)] text-slate-500">{sensor.name}</span>
-                  <span className="text-[clamp(13px,1.0vw,17px)] text-slate-200 font-mono font-bold">{sensor.value}°C</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* 底部统计信息 */}
         <div className="shrink-0 relative overflow-hidden rounded-md border border-slate-700/50 bg-slate-900/20 mt-1">

@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import Header from './Header';
 import AntennaInfo from './AntennaInfo';
 import PositionStatus from './PositionStatus';
@@ -9,8 +10,27 @@ import OperationsRecord from './OperationsRecord';
 import MaintenanceTips from './MaintenanceTips';
 import AntennaDisplay from './AntennaDisplay';
 import BackgroundAnimation from './BackgroundAnimation';
+import { stationApi } from '@/src/http/api';
+import { getEffectiveStationId } from '@/src/http/client';
+import type { SatStationOverviewVO } from '@/src/http/types';
 
 export default function Dashboard() {
+  // 台站运行总览：驱动底部状态栏的 NETWORK 在线状态与设备最后上报时间。
+  // /v1/sat/stations/{id}/overview 需登录态；未绑定台站时回退默认 1，接口失败时回退静态默认。
+  const [overview, setOverview] = useState<SatStationOverviewVO | null>(null);
+
+  useEffect(() => {
+    stationApi.getOverview(getEffectiveStationId()).then(setOverview).catch(() => {});
+  }, []);
+
+  // onlineStatus: 1=在线, 0/其它=离线；接口未返回时维持默认 ONLINE
+  const online = overview?.onlineStatus === 1;
+  const onlineUnknown = overview == null || overview.onlineStatus == null;
+  const networkColor = onlineUnknown ? 'bg-green-500' : online ? 'bg-green-500' : 'bg-red-500';
+  const networkLabel = onlineUnknown ? 'NETWORK: ONLINE' : online ? 'NETWORK: ONLINE' : 'NETWORK: OFFLINE';
+  // SYSTEM_UPTIME 无对应后端接口，改用设备最后上报时间（更真实），无数据时显示 --
+  const lastReport = overview?.lastReportTime;
+
   return (
     <div className="flex flex-col h-screen w-full bg-dash-bg text-slate-200 overflow-hidden grid-bg relative">
       {/* 炫酷背景动画层 */}
@@ -68,7 +88,7 @@ export default function Dashboard() {
         <footer className="h-10 flex justify-between items-center px-6 text-[clamp(11px,0.95vw,15px)] text-slate-500 py-1 border-t border-slate-900 bg-slate-950/80 backdrop-blur-sm">
           <div className="flex space-x-6">
             <span className="flex items-center">
-              <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse"></span> NETWORK: ONLINE
+              <span className={`w-1.5 h-1.5 ${networkColor} rounded-full mr-1.5 animate-pulse`}></span> {networkLabel}
             </span>
             <span className="flex items-center">
               <span className="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5"></span> DATABASE: CONNECTED
@@ -77,7 +97,7 @@ export default function Dashboard() {
               <span className="w-1.5 h-1.5 bg-sky-500 rounded-full mr-1.5"></span> ENCRYPTION: AES-256
             </span>
           </div>
-          <div className="font-mono">SYSTEM_UPTIME: 142:55:12</div>
+          <div className="font-mono">LAST_REPORT: {lastReport || '--'}</div>
         </footer>
       </div>
     </div>

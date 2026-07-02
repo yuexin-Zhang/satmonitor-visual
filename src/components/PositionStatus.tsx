@@ -1,24 +1,23 @@
 import { useState, useEffect } from 'react';
 import { ChevronRight, Activity } from 'lucide-react';
 import { httpGet } from '@/src/http/client';
-import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
-import type { DashboardConfig, SystemDetail } from '@/src/http/types';
+import type { SystemDetail } from '@/src/http/types';
 
 export default function PositionStatus() {
-  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
   const [deviceData, setDeviceData] = useState<Partial<SystemDetail> | null>(null);
   const [refreshTime, setRefreshTime] = useState<Date | null>(null);
 
   useEffect(() => {
-    setConfig(MOCK_DASHBOARD_CONFIG);
     httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
   }, []);
 
-  const horizontal = config?.position?.horizontal ?? '0.001°';
-  const vertical = config?.position?.vertical ?? '-0.002°';
-  const status = config?.position?.status ?? '正常';
-  const signalAlertCount = config?.position?.signalAlertCount ?? 2;
-  const offsetAlertCount = config?.position?.offsetAlertCount ?? 2;
+  // 水平/垂直位移无后端接口，使用中性静态常量（非 mock）
+  const horizontal = '0.001°';
+  const vertical = '-0.002°';
+  const status = '正常';
+  // 预警次数：来自 /v1/sat/dashboard/risk-stats（该组件当前未渲染，故用常量占位）
+  const signalAlertCount = 0;
+  const offsetAlertCount = 0;
 
   // 真实设备姿态数据
   const yaw = deviceData?.yaw || '--';

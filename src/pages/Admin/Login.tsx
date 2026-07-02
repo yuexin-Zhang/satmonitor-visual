@@ -1,28 +1,66 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Eye, EyeOff } from 'lucide-react';
+import { Shield, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { authApi, userApi } from '@/src/http/api';
+import type { CaptchaInfo } from '@/src/http/types';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
-  const [username, setUsername] = useState('admin');
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [captchaCode, setCaptchaCode] = useState('');
+  const [captcha, setCaptcha] = useState<CaptchaInfo | null>(null);
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const loadCaptcha = useCallback(async () => {
+    try {
+      const data = await authApi.captcha();
+      setCaptcha(data);
+      setCaptchaCode('');
+    } catch (err) {
+      // 验证码加载失败，不阻塞登录（后端可能未开启验证码）
+      console.error('验证码加载失败', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCaptcha();
+  }, [loadCaptcha]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    if (!username.trim() || !password.trim()) {
+      setError('请输入用户名和密码');
+      return;
+    }
     setLoading(true);
     try {
-      // 前端 mock 登录，账号 admin / admin123
-      if (username === 'admin' && password === 'admin123') {
-        localStorage.setItem('admin_token', 'mock-token');
-        localStorage.setItem('admin_user', JSON.stringify({ id: '1', username: 'admin', role: 'administrator' }));
-        navigate('/admin/home');
-      } else {
-        setError('用户名或密码错误');
+      const token = await authApi.login({
+        username: username.trim(),
+        password,
+        captchaKey: captcha?.captchaKey,
+        captchaCode: captchaCode.trim() || undefined,
+      });
+      localStorage.setItem('admin_token', token.accessToken);
+      localStorage.setItem('admin_refresh_token', token.refreshToken);
+      // 获取当前用户信息
+      try {
+        const user = await userApi.getCurrentUser();
+        localStorage.setItem('admin_user', JSON.stringify(user));
+      } catch {
+        // 用户信息获取失败不阻塞登录
       }
+      navigate('/admin/home');
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.msg ||
+        err?.message ||
+        '登录失败，请检查用户名和密码';
+      setError(msg);
+      loadCaptcha();
     } finally {
       setLoading(false);
     }
@@ -51,6 +89,7 @@ export default function AdminLogin() {
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-[clamp(14px,1.05vw,20px)] text-slate-200 focus:outline-none focus:border-sky-500/50 focus:ring-1 focus:ring-sky-500/20 transition-colors"
                 placeholder="请输入用户名"
+                autoComplete="username"
               />
             </div>
 
@@ -63,6 +102,7 @@ export default function AdminLogin() {
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 pr-10 text-[clamp(14px,1.05vw,20px)] text-slate-200 focus:outline-none focus:border-sky-500/50 focus:ring-1 focus:ring-sky-500/20 transition-colors"
                   placeholder="请输入密码"
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -72,10 +112,39 @@ export default function AdminLogin() {
                   {showPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <p className="text-[clamp(14px,1.05vw,20px)] text-slate-600 mt-1.5">
-                账号: admin / admin123
-              </p>
             </div>
+
+            {/* 验证码 */}
+            {captcha && (
+              <div>
+                <label className="block text-[clamp(14px,1.05vw,20px)] text-slate-400 mb-1.5">验证码</label>
+                <div className="flex gap-3">
+                  <input
+                    type="text"
+                    value={captchaCode}
+                    onChange={(e) => setCaptchaCode(e.target.value)}
+                    className="flex-1 bg-slate-950 border border-slate-800 rounded-lg px-4 py-2.5 text-[clamp(14px,1.05vw,20px)] text-slate-200 focus:outline-none focus:border-sky-500/50 focus:ring-1 focus:ring-sky-500/20 transition-colors"
+                    placeholder="请输入验证码"
+                  />
+                  <button
+                    type="button"
+                    onClick={loadCaptcha}
+                    title="点击刷新验证码"
+                    className="shrink-0 h-[42px] rounded-lg overflow-hidden border border-slate-800 bg-slate-950 flex items-center"
+                  >
+                    {captcha.captchaBase64 ? (
+                      <img
+                        src={captcha.captchaBase64}
+                        alt="验证码"
+                        className="h-full max-w-[120px] object-contain"
+                      />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 text-slate-500 mx-3" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="bg-rose-500/10 border border-rose-500/20 rounded-lg px-4 py-2.5 text-[clamp(14px,1.05vw,20px)] text-rose-400">

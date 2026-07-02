@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Bell, AlertTriangle, Volume2, VolumeX, List, Image } from 'lucide-react';
-import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
-import type { DashboardConfig } from '@/src/http/types';
+import { alarmApi, cameraApi } from '@/src/http/api';
+import type { SatAlarmRecordVO } from '@/src/http/types';
 import AlertListDialog, { type AlertItem } from './AlertListDialog';
 import AlertImageDialog from './AlertImageDialog';
 
@@ -9,46 +9,47 @@ interface MaintenanceTipsProps {
   isAlerting?: boolean;
 }
 
-/* ---------- 报警图片占位图 ---------- */
-const ALERT_IMAGES = [
-  `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect fill="#0f172a" width="1200" height="800"/><rect x="80" y="120" width="1040" height="560" rx="20" fill="#1e293b" stroke="#334155" stroke-width="4"/><text x="600" y="400" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-size="56" font-family="sans-serif" font-weight="bold">电源系统示意图</text></svg>')}`,
-  `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect fill="#0f172a" width="1200" height="800"/><rect x="80" y="120" width="1040" height="560" rx="20" fill="#1e293b" stroke="#334155" stroke-width="4"/><text x="600" y="400" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-size="56" font-family="sans-serif" font-weight="bold">网络设备布局图</text></svg>')}`,
-  `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect fill="#0f172a" width="1200" height="800"/><rect x="80" y="120" width="1040" height="560" rx="20" fill="#1e293b" stroke="#334155" stroke-width="4"/><text x="600" y="400" dominant-baseline="middle" text-anchor="middle" fill="#94a3b8" font-size="56" font-family="sans-serif" font-weight="bold">天线部件结构图</text></svg>')}`,
-];
+// 默认抓图设备（与 LiveVideo 一致）
+const CAPTURE_DEVICE_SERIAL = 'GN1818878';
+const CAPTURE_CHANNEL_NO = 1;
 
-function generateMockAlerts(baseMessage: string): AlertItem[] {
-  const now = new Date();
-  const msgs = [
-    { title: '电源系统异常', message: baseMessage, imageIdx: 0 },
-    { title: '网络连接中断', message: '网络设备响应超时，请检查交换机及光纤连接状态。', imageIdx: 1 },
-    { title: '天线部件位移', message: '检测到天线水平位移超出阈值，请检查固定支架。', imageIdx: 2 },
-  ];
-  return msgs.map((m, i) => ({
-    id: `alert-${now.getTime()}-${i}`,
-    title: m.title,
-    message: m.message,
-    time: new Date(now.getTime() - i * 8 * 60 * 1000).toISOString(),
-    imageUrl: ALERT_IMAGES[m.imageIdx],
-    status: 'pending' as const,
-  }));
+// 抓图失败时的提示文案
+const CAPTURE_ERROR_TEXT =
+  '实时抓拍获取失败，可能原因：\n1. 设备不在线\n2. 萤石云抓图权限未开通\n3. 未登录或令牌过期';
+
+// 将后端告警记录 SatAlarmRecordVO 映射为前端 AlertItem
+// imageUrl 留空：查看图片时通过 cameraApi.capture 实时抓拍获取
+function alarmRecordToAlertItem(r: SatAlarmRecordVO): AlertItem {
+  const resolvedIds = loadResolvedIds();
+  return {
+    id: `alarm-${r.id}`,
+    title: r.title || r.alarmType || '系统告警',
+    message: r.content || r.remark || '',
+    time: r.triggerTime || r.confirmTime || r.closeTime || new Date().toISOString(),
+    imageUrl: '',
+    status: resolvedIds.has(r.id) ? 'resolved' : (r.status === 0 ? 'pending' : 'resolved'),
+  };
 }
 
-/* ---------- localStorage 持久化 ---------- */
-const LS_KEY = 'satmonitor-alerts-v1';
-
-function loadAlerts(): AlertItem[] {
+/* ---------- 前端标记已处理告警 ID 持久化 ---------- */
+const RESOLVED_LS_KEY = 'satmonitor-resolved-alarm-ids';
+function loadResolvedIds(): Set<number> {
   try {
-    const raw = localStorage.getItem(LS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    const raw = localStorage.getItem(RESOLVED_LS_KEY);
+    return new Set(raw ? (JSON.parse(raw) as number[]) : []);
   } catch {
-    return [];
+    return new Set();
   }
 }
-
-function saveAlerts(alerts: AlertItem[]) {
-  try {
-    localStorage.setItem(LS_KEY, JSON.stringify(alerts));
-  } catch {}
+function saveResolvedId(id: number) {
+  const set = loadResolvedIds();
+  set.add(id);
+  try { localStorage.setItem(RESOLVED_LS_KEY, JSON.stringify(Array.from(set))); } catch {}
+}
+// 从前端标记 ID 提取后端 alarm id（形如 "alarm-123"）
+function parseAlarmId(alertId: string): number | null {
+  const m = String(alertId).match(/^alarm-(\d+)$/);
+  return m ? Number(m[1]) : null;
 }
 
 /* ---------- 报警音效 ---------- */
@@ -113,50 +114,61 @@ function formatAlertTime(iso: string) {
 }
 
 export default function MaintenanceTips({ isAlerting: initialAlerting }: MaintenanceTipsProps) {
-  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
   const [isAlerting, setIsAlerting] = useState(initialAlerting ?? false);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
 
-  /* 报警列表 */
-  const [alerts, setAlerts] = useState<AlertItem[]>(loadAlerts);
+  /* 报警列表（来自后端 /v1/sat/alarms/records/page） */
+  const [alerts, setAlerts] = useState<AlertItem[]>([]);
   const [listOpen, setListOpen] = useState(false);
+
+  /* 抓图弹窗：实时调用 cameraApi.capture 获取画面 */
   const [imageOpen, setImageOpen] = useState(false);
   const [currentImageAlert, setCurrentImageAlert] = useState<AlertItem | null>(null);
+  const [dialogImageUrl, setDialogImageUrl] = useState('');
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageError, setImageError] = useState('');
 
-  useEffect(() => {
-    setConfig(MOCK_DASHBOARD_CONFIG);
-  }, []);
-
-  useEffect(() => {
-    if (config?.maintenanceTips && initialAlerting === undefined) {
-      setIsAlerting(config.maintenanceTips.isAlerting);
-    }
-  }, [config, initialAlerting]);
-
-  /* 报警状态变化时生成/清理模拟数据 */
-  const prevAlertingRef = useRef(isAlerting);
-  useEffect(() => {
-    if (isAlerting && !prevAlertingRef.current) {
-      // 从没有报警变为报警：生成模拟数据
-      const existingPending = alerts.filter((a) => a.status === 'pending');
-      if (existingPending.length === 0) {
-        const msg = config?.maintenanceTips?.alertMessage ?? '近期有大雨，请检查电源系统或网络，部件位置请点击标识';
-        const newAlerts = generateMockAlerts(msg);
-        const merged = [...newAlerts, ...alerts];
-        setAlerts(merged);
-        saveAlerts(merged);
+  /* 拉取后端告警记录（status=0 待处理 + status=1 已确认），合并本地已处理标记 */
+  const refreshAlerts = useCallback(async () => {
+    try {
+      const [pendingRes, recentRes] = await Promise.all([
+        alarmApi.getRecordsPage({ pageNum: 1, pageSize: 50, status: 0 }),
+        alarmApi.getRecordsPage({ pageNum: 1, pageSize: 50, status: 1 }),
+      ]);
+      const records = [
+        ...(pendingRes?.list || []),
+        ...(recentRes?.list || []),
+      ];
+      if (records.length === 0) {
+        // 后端无数据时清空列表
+        setAlerts([]);
+        if (initialAlerting === undefined) setIsAlerting(false);
+        return;
       }
+      // 去重（按 id），按触发时间倒序
+      const map = new Map<number, SatAlarmRecordVO>();
+      for (const r of records) map.set(r.id, r);
+      const sorted = Array.from(map.values()).sort(
+        (a, b) => new Date(b.triggerTime || b.confirmTime || b.closeTime || 0).getTime() - new Date(a.triggerTime || a.confirmTime || a.closeTime || 0).getTime()
+      );
+      const items = sorted.map((r) => alarmRecordToAlertItem(r));
+      setAlerts(items);
+      // 同步报警状态：有 pending 记录则报警
+      const hasPending = items.some((a) => a.status === 'pending');
+      if (initialAlerting === undefined) setIsAlerting(hasPending);
+    } catch (err) {
+      console.error('refreshAlerts failed', err);
     }
-    prevAlertingRef.current = isAlerting;
-  }, [isAlerting, alerts, config]);
+  }, [initialAlerting]);
 
-  /* 持久化 */
   useEffect(() => {
-    saveAlerts(alerts);
-  }, [alerts]);
+    refreshAlerts();
+    const timer = setInterval(refreshAlerts, 30_000);
+    return () => clearInterval(timer);
+  }, [refreshAlerts]);
 
-  /* 浏览器自动播放策略 */
+  /* 浏览器自动播放策略：需用户交互后才能播放报警音 */
   useEffect(() => {
     const unlock = () => {
       setAudioUnlocked(true);
@@ -173,28 +185,58 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
 
   useAlarmSound(isAlerting && soundEnabled && audioUnlocked);
 
-  if (config?.maintenanceTips?.enabled === false) return null;
-
   const pendingCount = alerts.filter((a) => a.status === 'pending').length;
   const latestPending = alerts
     .filter((a) => a.status === 'pending')
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
 
-  const handleResolve = (id: string) => {
+  const handleResolve = async (id: string) => {
+    // 乐观更新
     setAlerts((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status: 'resolved' as const } : a))
     );
+    // 调后端闭环接口（如果是真实告警 ID）
+    const alarmId = parseAlarmId(id);
+    if (alarmId != null) {
+      try {
+        await alarmApi.close(alarmId);
+        saveResolvedId(alarmId);
+      } catch (err) {
+        console.error('alarmApi.close failed', err);
+      }
+    }
   };
 
-  const handleViewImage = (alert: AlertItem) => {
+  // 实时抓拍取图：POST /v1/sat/cameras/{deviceSerial}/capture
+  const captureImage = useCallback(async (alert: AlertItem) => {
     setCurrentImageAlert(alert);
     setImageOpen(true);
+    setImageLoading(true);
+    setImageError('');
+    setDialogImageUrl('');
+    try {
+      const res = await cameraApi.capture(CAPTURE_DEVICE_SERIAL, CAPTURE_CHANNEL_NO);
+      const url = res?.picUrl;
+      if (url) {
+        setDialogImageUrl(url);
+      } else {
+        setImageError(CAPTURE_ERROR_TEXT);
+      }
+    } catch (err) {
+      console.error('cameraApi.capture failed', err);
+      setImageError(CAPTURE_ERROR_TEXT);
+    } finally {
+      setImageLoading(false);
+    }
+  }, []);
+
+  const handleViewImage = (alert: AlertItem) => {
+    captureImage(alert);
   };
 
   const handleViewLatestImage = () => {
     if (latestPending) {
-      setCurrentImageAlert(latestPending);
-      setImageOpen(true);
+      captureImage(latestPending);
     }
   };
 
@@ -297,8 +339,7 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
                   <span className="inline-flex items-center gap-x-1 flex-wrap">
                     {renderAlertMessage(
                       latestPending?.message ??
-                        config?.maintenanceTips?.alertMessage ??
-                        '近期有大雨，请检查电源系统或网络，部件位置请点击标识'
+                        '检测到异常告警，请查看详情或前往现场排查'
                     )}
                     {latestPending && (
                       <span className="text-xs text-slate-500 ml-1 shrink-0">
@@ -307,7 +348,7 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
                     )}
                   </span>
                 ) : (
-                  <>{config?.maintenanceTips?.message ?? '系统运行正常，暂无异常告警。'}</>
+                  <>系统运行正常，暂无异常告警。</>
                 )}
               </p>
             </div>
@@ -358,11 +399,13 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
         onViewImage={handleViewImage}
       />
 
-      {/* 图片详情弹窗 */}
+      {/* 图片详情弹窗：实时抓拍画面 */}
       <AlertImageDialog
         open={imageOpen}
-        imageUrl={currentImageAlert?.imageUrl ?? ''}
-        title={currentImageAlert?.title ?? ''}
+        imageUrl={dialogImageUrl}
+        title={currentImageAlert?.title ?? '实时抓拍'}
+        loading={imageLoading}
+        errorText={imageError || undefined}
         onClose={() => setImageOpen(false)}
       />
     </>

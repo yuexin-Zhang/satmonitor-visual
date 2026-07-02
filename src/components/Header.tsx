@@ -3,21 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { LogOut } from 'lucide-react';
 import { httpGet } from '@/src/http/client';
-import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
-import type { DashboardConfig, SystemDetail } from '@/src/http/types';
+import type { SystemDetail } from '@/src/http/types';
 
 export default function Header() {
   const navigate = useNavigate();
   const [time, setTime] = useState(dayjs());
-  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
   const [deviceData, setDeviceData] = useState<{ organizationName?: string } | null>(null);
 
   useEffect(() => {
-    setConfig(MOCK_DASHBOARD_CONFIG);
     httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => setDeviceData(data)).catch(() => {});
   }, []);
 
-  const siteName = deviceData?.organizationName || config?.siteName || '淳安广播转播台';
+  // 站点名称：来自 /v1/snow/detail.organizationName，接口未返回时显示中性占位
+  const siteName = deviceData?.organizationName || '监测台站';
 
   useEffect(() => {
     const timer = setInterval(() => setTime(dayjs()), 1000);

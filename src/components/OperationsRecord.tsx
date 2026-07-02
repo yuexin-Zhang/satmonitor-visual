@@ -14,8 +14,8 @@ import {
   Info,
 } from 'lucide-react';
 import { useState, useEffect, useMemo } from 'react';
-import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
-import type { DashboardConfig } from '@/src/http/types';
+import { alarmApi, snowExecLogApi } from '@/src/http/api';
+import type { SatAlarmRecordVO, SatSnowExecLogVO } from '@/src/http/types';
 
 interface RecordItem {
   id: string;
@@ -25,6 +25,65 @@ interface RecordItem {
   title: string;
   subtitle: string;
   iconType: string;
+}
+
+// 将后端告警记录转为运维记录格式
+function alarmToRecord(r: SatAlarmRecordVO): RecordItem {
+  // 根据 alarmType 推断图标
+  const t = (r.alarmType || '').toLowerCase();
+  let iconType = 'info';
+  if (/signal|信号/.test(t)) iconType = r.status === 0 ? 'signal-fault' : 'signal';
+  else if (/power|电源|电压|电流/.test(t)) iconType = r.status === 0 ? 'power-fault' : 'power';
+  else if (/temp|温度/.test(t)) iconType = r.status === 0 ? 'temp-fault' : 'temp';
+  else if (/rain|snow|雨雪/.test(t)) iconType = r.status === 0 ? 'rain-snow-fault' : 'rain-snow';
+  else if (/move|位移|offset/.test(t)) iconType = r.status === 0 ? 'move-fault' : 'move';
+  else if (/antenna|天线/.test(t)) iconType = r.status === 0 ? 'antenna-fault' : 'antenna';
+  else if (/heat|加热/.test(t)) iconType = r.status === 0 ? 'heat-fault' : 'heat';
+
+  const time = r.triggerTime || r.confirmTime || r.closeTime || '';
+  return {
+    id: `alarm-${r.id}`,
+    date: formatDateLabel(time),
+    time: time.slice(11, 16),
+    code: r.alarmType || `ALM-${r.id}`,
+    title: r.title || r.alarmType || '系统告警',
+    subtitle: r.content || r.remark || '',
+    iconType,
+  };
+}
+
+// 将融雪执行日志转为运维记录格式
+function snowLogToRecord(r: SatSnowExecLogVO): RecordItem {
+  // 1=自动 2=手动 3=自测
+  const isAuto = r.execType === 1;
+  const isFailed = r.status === 2;
+  let iconType = isAuto ? 'heat' : 'heat';
+  if (isFailed) iconType = 'heat-fault';
+  const time = r.startTime || r.createTime || '';
+  return {
+    id: `snow-${r.id}`,
+    date: formatDateLabel(time),
+    time: time.slice(11, 16),
+    code: `SNOW-${String(r.id).padStart(4, '0')}`,
+    title: `${isAuto ? '自动' : (r.execType === 3 ? '自测' : '手动')}启动加热`,
+    subtitle: r.triggerReason || (isFailed ? '执行失败' : '执行成功'),
+    iconType,
+  };
+}
+
+// 把时间戳转为友好日期标签（今天/昨天/具体日期）
+function formatDateLabel(timeStr: string): string {
+  if (!timeStr) return '未知';
+  const d = new Date(timeStr);
+  if (isNaN(d.getTime())) return '未知';
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / 86400_000);
+  if (diffDays === 0) return '今天';
+  if (diffDays === 1) return '昨天';
+  if (diffDays === -1) return '明天';
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
 }
 
 function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
@@ -105,134 +164,36 @@ function RecordIcon({ type }: { type: RecordItem['iconType'] }) {
 }
 
 export default function OperationsRecord() {
-  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
   const [loadTime] = useState(() => new Date());
+  const [apiRecords, setApiRecords] = useState<RecordItem[]>([]);
+  const [refreshTime, setRefreshTime] = useState<Date | null>(null);
 
+  // 拉取最近 30 天告警 + 融雪执行日志，合并按时间倒序
   useEffect(() => {
-    setConfig(MOCK_DASHBOARD_CONFIG);
+    const end = new Date();
+    const start = new Date(end.getTime() - 30 * 86400_000);
+    const startTime = start.toISOString().slice(0, 10) + ' 00:00:00';
+    const endTime = end.toISOString().slice(0, 10) + ' 23:59:59';
+    Promise.all([
+      alarmApi.getRecordsPage({ pageNum: 1, pageSize: 30, startTime, endTime }).catch(() => ({ list: [] as SatAlarmRecordVO[], total: 0 })),
+      snowExecLogApi.getPage({ pageNum: 1, pageSize: 30 }).catch(() => ({ list: [] as SatSnowExecLogVO[], total: 0 })),
+    ])
+      .then(([alarmRes, snowRes]) => {
+        const alarmRecs = (alarmRes?.list || []).map(alarmToRecord);
+        const snowRecs = (snowRes?.list || []).map(snowLogToRecord);
+        const merged = [...alarmRecs, ...snowRecs].sort((a, b) => {
+          // 按 date+time 倒序
+          return (b.date + b.time).localeCompare(a.date + a.time);
+        });
+        setApiRecords(merged);
+        setRefreshTime(new Date());
+      })
+      .catch(() => setRefreshTime(new Date()));
   }, []);
 
-  const defaultRecords: RecordItem[] = [
-    {
-      id: '1',
-      date: '今天',
-      time: '09:59',
-      code: 'ANT_H001',
-      title: '天线页面01加热故障',
-      subtitle: '请检查加热模块',
-      iconType: 'heat-fault',
-    },
-    {
-      id: '2',
-      date: '今天',
-      time: '09:42',
-      code: 'HT_A002',
-      title: '自动启动加热',
-      subtitle: '',
-      iconType: 'heat',
-    },
-    {
-      id: '3',
-      date: '今天',
-      time: '09:30',
-      code: 'AI_V003',
-      title: 'AI视觉监测有雪',
-      subtitle: '摄像头视野受阻',
-      iconType: 'eye',
-    },
-    {
-      id: '4',
-      date: '今天',
-      time: '09:15',
-      code: 'TMP_L004',
-      title: '空气温度低于2°',
-      subtitle: '当前温度：1.5°C',
-      iconType: 'temp-low',
-    },
-    {
-      id: '5',
-      date: '2026年4月5日',
-      time: '21:16',
-      code: 'RS_S005',
-      title: '雨雪传感器有雨雪',
-      subtitle: '检测到降水',
-      iconType: 'rain-snow',
-    },
-    {
-      id: '6',
-      date: '2026年4月5日',
-      time: '20:45',
-      code: 'HT_M006',
-      title: '手动关闭加热',
-      subtitle: '',
-      iconType: 'heat-off',
-    },
-    {
-      id: '7',
-      date: '2026年4月5日',
-      time: '20:30',
-      code: 'HT_M007',
-      title: '手动启动加热',
-      subtitle: '',
-      iconType: 'heat',
-    },
-    {
-      id: '8',
-      date: '2026年4月4日',
-      time: '18:20',
-      code: 'PWR_F008',
-      title: '电源信息故障',
-      subtitle: '请检查供电系统',
-      iconType: 'power-fault',
-    },
-    {
-      id: '9',
-      date: '2026年4月4日',
-      time: '17:10',
-      code: 'ANT_T009',
-      title: '天线温度故障',
-      subtitle: '温度传感器异常',
-      iconType: 'antenna-fault',
-    },
-    {
-      id: '10',
-      date: '2026年4月4日',
-      time: '16:55',
-      code: 'AIR_T010',
-      title: '空气温度故障',
-      subtitle: '温度读数异常',
-      iconType: 'temp-fault',
-    },
-    {
-      id: '11',
-      date: '2026年4月3日',
-      time: '14:30',
-      code: 'RS_F011',
-      title: '雨雪传感器故障',
-      subtitle: '传感器无响应',
-      iconType: 'rain-snow-fault',
-    },
-    {
-      id: '12',
-      date: '2026年4月3日',
-      time: '13:20',
-      code: 'MOV_F012',
-      title: '位移故障',
-      subtitle: '请检查机械结构',
-      iconType: 'move-fault',
-    },
-    {
-      id: '13',
-      date: '2026年4月3日',
-      time: '12:00',
-      code: 'SIG_F013',
-      title: '信号强度故障',
-      subtitle: '信号丢失或弱',
-      iconType: 'signal-fault',
-    },
-  ];
-
-  const records = config?.operations ?? defaultRecords;
+  // 运维记录只来自真实接口；接口无数据时展示空状态
+  const records = apiRecords;
+  const isEmpty = apiRecords.length === 0;
 
   const grouped = useMemo(() => {
     const map = new Map<string, RecordItem[]>();
@@ -250,12 +211,18 @@ export default function OperationsRecord() {
           <Bell className="title-icon text-sky-500" />
           运维记录
         </h2>
-        <span className="text-[clamp(10px,0.8vw,12px)] text-slate-600 font-mono">{String(loadTime.getHours()).padStart(2,'0')}:{String(loadTime.getMinutes()).padStart(2,'0')}:{String(loadTime.getSeconds()).padStart(2,'0')}</span>
+        <span className="text-[clamp(10px,0.8vw,12px)] text-slate-600 font-mono">{refreshTime ? `${String(refreshTime.getHours()).padStart(2,'0')}:${String(refreshTime.getMinutes()).padStart(2,'0')}:${String(refreshTime.getSeconds()).padStart(2,'0')}` : `${String(loadTime.getHours()).padStart(2,'0')}:${String(loadTime.getMinutes()).padStart(2,'0')}:${String(loadTime.getSeconds()).padStart(2,'0')}`}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-2 custom-scroll">
         <div className="space-y-2">
-          {grouped.map(([date, items]) => (
+          {isEmpty ? (
+            <div className="flex flex-col items-center justify-center py-10 text-slate-500">
+              <Info className="w-8 h-8 mb-2 text-slate-600" />
+              <p className="text-[clamp(12px,1vw,15px)]">暂无运维记录</p>
+            </div>
+          ) : (
+            grouped.map(([date, items]) => (
             <div key={date}>
               <div className="text-[clamp(12px,1.0vw,16px)] text-slate-300 font-medium mb-1">
                 {date}
@@ -291,7 +258,8 @@ export default function OperationsRecord() {
                 ))}
               </div>
             </div>
-          ))}
+          ))
+          )}
         </div>
       </div>
     </div>

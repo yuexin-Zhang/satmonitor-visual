@@ -1,90 +1,170 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Info,
   Radio,
   Signal,
   MoveDiagonal,
   ShieldCheck,
 } from 'lucide-react';
-import { httpGet } from '@/src/http/client';
-import { MOCK_DASHBOARD_CONFIG } from '@/src/http/mock';
-import type { DashboardConfig, SystemDetail } from '@/src/http/types';
+import { snowApi, thresholdApi, dashboardApi } from '@/src/http/api';
+import { getEffectiveStationId } from '@/src/http/client';
+import type { SystemDetail, SnowDataHistoryItem } from '@/src/http/types';
 import ThresholdBarChart, { type TimeRange } from './ThresholdBarChart';
 
-// 生成当天最近 1 小时内每 5 分钟的时间点
-function generateHourSignalData(): { label: string; value: number }[] {
-  const now = new Date();
-  return Array.from({ length: 12 }, (_, i) => {
-    const t = new Date(now.getTime() - (11 - i) * 5 * 60_000);
-    return {
-      label: `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`,
-      value: Math.round(70 + Math.random() * 30),
-    };
+// 天线基础参数：后端 /v1/snow/extra-info 实测仅返回 relayStates，不含卫星/方位角/仰角/频率，
+// 后端暂无对应接口，故此处使用静态常量（非 mock 数据）。接入接口后替换即可。
+const ANTENNA_CONST = {
+  satellite: '中星6E 115.5°',
+  azimuth: '192°',
+  elevation: '40°',
+  frequency: { name: '浙江一套', value: 3825, polarization: '垂直(V)', symbolRate: 6780 },
+  displacement: { horizontal: '0.001°', vertical: '-0.002°', status: '正常' },
+};
+// 信号阈值缺省（接口未返回或未登录时使用）
+const DEFAULT_SIGNAL_MIN = 70;
+
+// 不同时间范围对应的查询参数（startTime/endTime/timeLevel）
+function getRangeParams(range: TimeRange) {
+  const end = new Date();
+  const start = new Date();
+  switch (range) {
+    case 'hour': start.setHours(start.getHours() - 1); break;
+    case 'day': start.setHours(0, 0, 0, 0); break;
+    case 'week': start.setDate(start.getDate() - 7); break;
+    case 'month': start.setDate(start.getDate() - 30); break;
+    case 'halfYear': start.setDate(start.getDate() - 180); break;
+    case 'year': start.setFullYear(start.getFullYear() - 1); break;
+  }
+  // timeLevel: 1=小时/日/周粒度, 2=月/半年/年粒度
+  const timeLevel: 1 | 2 = (range === 'hour' || range === 'day' || range === 'week') ? 1 : 2;
+  return {
+    tag: 1,
+    startTime: start.toISOString().slice(0, 10) + ' 00:00:00',
+    endTime: end.toISOString().slice(0, 10) + ' 23:59:59',
+    timeLevel,
+  };
+}
+
+// 将 /v1/snow/data-history 返回的原始数据转为图表可用格式
+// 取 signalStrength 字段作为信号强度，time 取 MM-DD 或 HH:mm 作为 label
+function toChartData(rows: SnowDataHistoryItem[], range: TimeRange): { label: string; value: number }[] {
+  return rows.map((row) => {
+    const raw = row.signalStrength;
+    // 后端可能以字符串 "92%" 或数字 92 返回
+    const value = typeof raw === 'string' ? parseFloat(raw) : (raw as number) ?? 0;
+    const t = row.time || '';
+    // 小时/日 粒度显示 HH:mm，其它显示 MM-DD
+    const label = (range === 'hour' || range === 'day')
+      ? t.slice(11, 16)
+      : t.slice(5, 10);
+    return { label, value: Math.round(value) };
   });
 }
 
-// 不同时间范围对应的 mock 信号强度数据
-const MOCK_SIGNAL_BY_RANGE: Record<TimeRange, () => { label: string; value: number }[]> = {
-  hour: generateHourSignalData,
-  day: () => [
-    { label: '00:00', value: 92 }, { label: '04:00', value: 88 },
-    { label: '08:00', value: 78 }, { label: '12:00', value: 65 },
-    { label: '16:00', value: 85 }, { label: '20:00', value: 90 },
-  ],
-  week: () => [
-    { label: '周一', value: 92 }, { label: '周二', value: 78 },
-    { label: '周三', value: 65 }, { label: '周四', value: 88 },
-    { label: '周五', value: 75 }, { label: '周六', value: 82 },
-    { label: '周日', value: 85 },
-  ],
-  month: () => Array.from({ length: 10 }, (_, i) => ({
-    label: `${i * 3 + 1}日`,
-    value: Math.round(70 + Math.random() * 30),
-  })),
-  halfYear: () => [
-    { label: '1月', value: 85 }, { label: '2月', value: 78 },
-    { label: '3月', value: 68 }, { label: '4月', value: 92 },
-    { label: '5月', value: 88 }, { label: '6月', value: 82 },
-  ],
-  year: () => [
-    { label: '1月', value: 88 }, { label: '2月', value: 82 },
-    { label: '3月', value: 68 }, { label: '4月', value: 75 },
-    { label: '5月', value: 92 }, { label: '6月', value: 85 },
-    { label: '7月', value: 78 }, { label: '8月', value: 90 },
-    { label: '9月', value: 72 }, { label: '10月', value: 65 },
-    { label: '11月', value: 88 }, { label: '12月', value: 92 },
-  ],
-};
+// 当接口无数据时的空状态占位（非 mock，仅表示暂无数据）
+function emptyChartData(): { label: string; value: number }[] {
+  return [{ label: '暂无数据', value: 0 }];
+}
+
+// 防御性读取阈值配置中的 signalMin（config 可能是对象或 JSON 字符串，字段名后端可能有差异）
+function readSignalMin(configRaw: any): number | undefined {
+  if (configRaw == null) return undefined;
+  const cfg = typeof configRaw === 'string' ? safeParse(configRaw) : configRaw;
+  if (!cfg || typeof cfg !== 'object') return undefined;
+  const v = cfg.signalMin ?? cfg.signalStrengthMin ?? cfg.minSignal ?? cfg.signal_min;
+  return typeof v === 'number' ? v : undefined;
+}
+function safeParse(s: string): any {
+  try { return JSON.parse(s); } catch { return undefined; }
+}
+
+// 防御性读取风险统计中的 信号强度预警次数 / 天线偏移预警次数
+function readRiskCounts(data: any): { signal: number; offset: number } {
+  if (!data || typeof data !== 'object') return { signal: 0, offset: 0 };
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = data[k];
+      if (typeof v === 'number') return v;
+      if (v && typeof v === 'object' && typeof v.count === 'number') return v.count;
+    }
+    return undefined;
+  };
+  const signal =
+    pick('signalAlertCount', 'signalCount', 'signalAlerts', 'signal') ?? 0;
+  const offset =
+    pick('offsetAlertCount', 'displacementAlertCount', 'offsetCount', 'displacementCount', 'offset', 'displacement') ?? 0;
+  return { signal, offset };
+}
 
 export default function AntennaInfo() {
-  const [config, setConfig] = useState<Partial<DashboardConfig> | null>(null);
   const [deviceData, setDeviceData] = useState<Partial<SystemDetail> | null>(null);
   const [range, setRange] = useState<TimeRange>('day');
   const [refreshTime, setRefreshTime] = useState<Date | null>(null);
+  const [signalHistory, setSignalHistory] = useState<{ label: string; value: number }[]>([]);
 
+  // 真实接口拉取的阈值与年度风险次数（未登录/接口失败时回落到常量）
+  const [signalMin, setSignalMin] = useState<number>(DEFAULT_SIGNAL_MIN);
+  const [riskCounts, setRiskCounts] = useState<{ signal: number; offset: number }>({ signal: 0, offset: 0 });
+
+  // 设备实时详情 + 信号阈值 + 年度风险统计
   useEffect(() => {
-    setConfig(MOCK_DASHBOARD_CONFIG);
-    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
+    snowApi.getDetail(1).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
+
+    const stationId = getEffectiveStationId();
+    // 信号阈值：GET /v1/sat/thresholds/{stationId}
+    thresholdApi
+      .get(stationId)
+      .then((res) => {
+        const m = readSignalMin(res?.config);
+        if (m != null) setSignalMin(m);
+      })
+      .catch(() => {});
+
+    // 年度风险统计：GET /v1/sat/dashboard/risk-stats
+    const year = new Date().getFullYear();
+    dashboardApi
+      .getRiskStats({
+        stationId,
+        startTime: `${year}-01-01 00:00:00`,
+        endTime: `${year}-12-31 23:59:59`,
+      })
+      .then((data) => setRiskCounts(readRiskCounts(data)))
+      .catch(() => {});
   }, []);
 
-  const satellite = config?.antenna?.satellite ?? '中星6E 115.5°';
-  const azimuth = config?.antenna?.azimuth ?? '192°';
-  const elevation = config?.antenna?.elevation ?? '40°';
-  const freqName = config?.antenna?.frequency?.name ?? '浙江一套';
-  const freqValue = config?.antenna?.frequency?.value ?? 3825;
-  const freqPolarization = config?.antenna?.frequency?.polarization ?? '垂直(V)';
-  const freqSymbolRate = config?.antenna?.frequency?.symbolRate ?? 6780;
-  const realSignalStrength = deviceData?.signalStrength;
-  const signalAlertStatus = config?.antenna?.signalAlert?.status ?? '正常';
-  const signalAlertCount = config?.antenna?.signalAlert?.count ?? 2;
-  const displacementHorizontal = config?.antenna?.displacement?.horizontal ?? '0.001°';
-  const displacementVertical = config?.antenna?.displacement?.vertical ?? '-0.002°';
-  const displacementStatus = config?.antenna?.displacement?.status ?? '正常';
-  const offsetAlertCount = config?.antenna?.offsetAlert?.count ?? 2;
-  const threshold = config?.alertThresholds?.signalMin ?? 70;
+  const fetchSignalHistory = useCallback((r: TimeRange) => {
+    snowApi.getDataHistory(getRangeParams(r))
+      .then((rows) => setSignalHistory(rows?.length ? toChartData(rows, r) : []))
+      .catch(() => setSignalHistory([]));
+  }, []);
 
-  const chartData = useMemo(() => MOCK_SIGNAL_BY_RANGE[range](), [range]);
-  const signalMax = useMemo(() => Math.max(...chartData.map((d) => d.value)), [chartData]);
+  useEffect(() => {
+    fetchSignalHistory(range);
+  }, [range, fetchSignalHistory]);
+
+  const realSignalStrength = deviceData?.signalStrength;
+  // 强度预警状态：根据实时信号强度与阈值比较（无实时值时显示正常）
+  const signalAlertStatus = (() => {
+    if (realSignalStrength == null || realSignalStrength === '') return '正常';
+    const num = typeof realSignalStrength === 'string' ? parseFloat(realSignalStrength) : realSignalStrength;
+    return !isNaN(num) && num < signalMin ? '预警' : '正常';
+  })();
+
+  const { satellite, azimuth, elevation, frequency: freq, displacement } = ANTENNA_CONST;
+  const displacementHorizontal = displacement.horizontal;
+  const displacementVertical = displacement.vertical;
+  const displacementStatus = displacement.status;
+  const signalAlertCount = riskCounts.signal;
+  const offsetAlertCount = riskCounts.offset;
+  const threshold = signalMin;
+
+  const chartData = useMemo(() => {
+    if (signalHistory.length > 0) return signalHistory;
+    return emptyChartData();
+  }, [signalHistory]);
+  const signalMax = useMemo(
+    () => (chartData.length ? Math.max(...chartData.map((d) => d.value)) : 0),
+    [chartData],
+  );
 
   return (
     <div className="glass-card h-full flex flex-col">
@@ -114,10 +194,10 @@ export default function AntennaInfo() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-slate-400">{freqName}:</span>
-            <span className="text-sky-400 font-mono">{freqValue}</span>
-            <span className="text-slate-500">{freqPolarization}:</span>
-            <span className="text-sky-400 font-mono">{freqSymbolRate}</span>
+            <span className="text-slate-400">{freq.name}:</span>
+            <span className="text-sky-400 font-mono">{freq.value}</span>
+            <span className="text-slate-500">{freq.polarization}:</span>
+            <span className="text-sky-400 font-mono">{freq.symbolRate}</span>
           </div>
         </div>
 
@@ -167,7 +247,7 @@ export default function AntennaInfo() {
                       <span className="text-[clamp(11px,0.9vw,15px)] text-sky-400 font-mono">{realSignalStrength}%</span>
                     )}
                     <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    <span className="text-[clamp(11px,0.9vw,15px)] text-emerald-400 font-medium">{signalAlertStatus === 'normal' ? '正常' : signalAlertStatus}</span>
+                    <span className={`text-[clamp(11px,0.9vw,15px)] font-medium ${signalAlertStatus === '预警' ? 'text-rose-400' : 'text-emerald-400'}`}>{signalAlertStatus}</span>
                   </div>
                 </div>
               </div>
