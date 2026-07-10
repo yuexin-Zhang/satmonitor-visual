@@ -1,28 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Zap } from 'lucide-react';
-import { httpGet, getEffectiveStationId } from '@/src/http/client';
-import { snowApi, dashboardApi } from '@/src/http/api';
+import { httpGet } from '@/src/http/client';
+import { snowApi } from '@/src/http/api';
 import type { SystemDetail, PowerChartItem } from '@/src/http/types';
 import ThresholdBarChart, { type TimeRange } from './ThresholdBarChart';
 
 // 功率阈值缺省（kWh）
 const DEFAULT_POWER_THRESHOLD = 4.2;
-// 年度累计耗电缺省（接口未返回时显示）
-const DEFAULT_YEARLY_CONSUMPTION = 0;
-
-// 防御性读取能耗统计中的累计用电量（后端字段名可能有差异）
-function readYearlyConsumption(data: any): number | undefined {
-  if (!data || typeof data !== 'object') return undefined;
-  const keys = [
-    'yearlyConsumption', 'totalConsumption', 'totalEnergy',
-    'totalKwh', 'energyConsumption', 'energy', 'consumption', 'kwh',
-  ];
-  for (const k of keys) {
-    const v = data[k];
-    if (typeof v === 'number' && !isNaN(v)) return Math.round(v * 10) / 10;
-  }
-  return undefined;
-}
 
 function getRangeParams(range: TimeRange) {
   const end = new Date();
@@ -46,28 +30,12 @@ function getRangeParams(range: TimeRange) {
 
 export default function PowerInfo() {
   const [deviceData, setDeviceData] = useState<Partial<SystemDetail> | null>(null);
-  const [range, setRange] = useState<TimeRange>('week');
+  const [range, setRange] = useState<TimeRange>('day');
   const [apiData, setApiData] = useState<PowerChartItem[]>([]);
   const [refreshTime, setRefreshTime] = useState<Date | null>(null);
-  // 年度累计耗电：来自 /v1/sat/dashboard/energy-stats
-  const [yearlyConsumption, setYearlyConsumption] = useState<number>(DEFAULT_YEARLY_CONSUMPTION);
 
   useEffect(() => {
     httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
-
-    // 年度累计耗电：GET /v1/sat/dashboard/energy-stats
-    const year = new Date().getFullYear();
-    dashboardApi
-      .getEnergyStats({
-        stationId: getEffectiveStationId(),
-        startTime: `${year}-01-01 00:00:00`,
-        endTime: `${year}-12-31 23:59:59`,
-      })
-      .then((data) => {
-        const v = readYearlyConsumption(data);
-        if (v != null) setYearlyConsumption(v);
-      })
-      .catch(() => {});
   }, []);
 
   const fetchPowerChart = useCallback((r: TimeRange) => {
@@ -82,9 +50,10 @@ export default function PowerInfo() {
     setRange(r);
   }, []);
 
-  const voltage = deviceData?.voltage || '--';
-  const current = deviceData?.current || '--';
-  const relays = deviceData?.relays ?? [];
+  const voltage = deviceData?.voltageValue ?? '--';
+  const current = deviceData?.currentValue ?? '--';
+  const power = deviceData?.powerValue ?? '--';
+  const energyValue = deviceData?.energyValue;
 
   const chartData = useMemo(() => {
     if (apiData.length > 0) {
@@ -111,22 +80,26 @@ export default function PowerInfo() {
       </div>
 
       <div className="panel-content flex-1 flex flex-col gap-1 overflow-y-auto p-2">
-        {/* 电压和电流 */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2 flex-1">
+        {/* 电压、电流和功率 */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1 flex-1">
             <span className="text-[clamp(11px,0.9vw,15px)] text-slate-400">电压:</span>
-            <span className="text-[clamp(11px,0.9vw,15px)] font-medium text-slate-200">{voltage}</span>
+            <span className="text-[clamp(11px,0.9vw,15px)] font-medium text-slate-200">{voltage}{typeof voltage === 'number' ? ' V' : ''}</span>
           </div>
-          <div className="flex items-center gap-2 flex-1">
+          <div className="flex items-center gap-1 flex-1">
             <span className="text-[clamp(11px,0.9vw,15px)] text-slate-400">电流:</span>
-            <span className="text-[clamp(11px,0.9vw,15px)] font-medium text-slate-200">{current}</span>
+            <span className="text-[clamp(11px,0.9vw,15px)] font-medium text-slate-200">{current}{typeof current === 'number' ? ' A' : ''}</span>
+          </div>
+          <div className="flex items-center gap-1 flex-1">
+            <span className="text-[clamp(11px,0.9vw,15px)] text-slate-400">功率:</span>
+            <span className="text-[clamp(11px,0.9vw,15px)] font-medium text-slate-200">{power}{typeof power === 'number' ? ' kW' : ''}</span>
           </div>
         </div>
 
         {/* 本年度累计耗电 */}
         <div className="flex items-center justify-between bg-slate-800/10 rounded py-1">
-          <span className="text-[clamp(11px,0.9vw,15px)] text-slate-400">本年度累计耗电:</span>
-          <span className="text-[clamp(14px,1.1vw,19px)] font-bold text-yellow-400">{yearlyConsumption} <span className="text-[clamp(11px,0.9vw,15px)] font-normal text-slate-400">kWh</span></span>
+          <span className="text-[clamp(11px,0.9vw,15px)] text-slate-400">本年度累积耗电:</span>
+          <span className="text-[clamp(14px,1.1vw,19px)] font-bold text-yellow-400">{energyValue ?? '--'} <span className="text-[clamp(11px,0.9vw,15px)] font-normal text-slate-400">kWh</span></span>
         </div>
 
         {/* 功率柱状图 */}

@@ -160,6 +160,11 @@ export interface SystemDetail {
   potTemperature: number;
   signalStrength: string;
   organizationName: string;
+  // 数值型字段（与 voltage/current/power/energy 字符串字段对应）
+  voltageValue?: number;
+  currentValue?: number;
+  powerValue?: number;
+  energyValue?: number;
 }
 
 export interface PowerChartParams {

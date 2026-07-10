@@ -445,12 +445,14 @@ export const alarmApi = {
     endTime?: string;
   }) => httpGet<PageResult<SatAlarmRecordVO>>('/v1/sat/alarms/records/page', { params }),
   /** 确认告警 */
-  confirm: (id: number) => httpPut(`/v1/sat/alarms/records/${id}/confirm`),
+  confirm: (id: number, remark?: string) =>
+    httpPut(`/v1/sat/alarms/records/${id}/confirm`, remark ? { remark } : undefined),
   /** 处置告警 */
   handle: (id: number, remark?: string) =>
-    httpPut(`/v1/sat/alarms/records/${id}/handle`, undefined, { params: { remark } }),
+    httpPut(`/v1/sat/alarms/records/${id}/handle`, remark ? { remark } : undefined),
   /** 闭环告警 */
-  close: (id: number) => httpPut(`/v1/sat/alarms/records/${id}/close`),
+  close: (id: number, remark?: string) =>
+    httpPut(`/v1/sat/alarms/records/${id}/close`, remark ? { remark } : undefined),
 };
 
 // ==================== 存储配置 ====================

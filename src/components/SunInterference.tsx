@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Sun } from 'lucide-react';
 import { sunInterferenceApi } from '@/src/http/api';
-import { getStationIdFromStorage } from '@/src/http/client';
+import { getEffectiveStationId } from '@/src/http/client';
 import type { SatSunInterferenceVO } from '@/src/http/types';
 
 // 日凌信息：来自 /v1/sat/sun-interference/status
@@ -18,8 +18,7 @@ export default function SunInterference() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchData = useCallback(async () => {
-    const stationId = getStationIdFromStorage();
-    if (!stationId) return;
+    const stationId = getEffectiveStationId();
     try {
       const res = await sunInterferenceApi.getStatus(stationId);
       if (res) setData(res);

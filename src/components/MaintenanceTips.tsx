@@ -20,36 +20,14 @@ const CAPTURE_ERROR_TEXT =
 // 将后端告警记录 SatAlarmRecordVO 映射为前端 AlertItem
 // imageUrl 留空：查看图片时通过 cameraApi.capture 实时抓拍获取
 function alarmRecordToAlertItem(r: SatAlarmRecordVO): AlertItem {
-  const resolvedIds = loadResolvedIds();
   return {
     id: `alarm-${r.id}`,
     title: r.title || r.alarmType || '系统告警',
     message: r.content || r.remark || '',
     time: r.triggerTime || r.confirmTime || r.closeTime || new Date().toISOString(),
     imageUrl: '',
-    status: resolvedIds.has(r.id) ? 'resolved' : (r.status === 0 ? 'pending' : 'resolved'),
+    status: r.status === 0 ? 'pending' : 'resolved',
   };
-}
-
-/* ---------- 前端标记已处理告警 ID 持久化 ---------- */
-const RESOLVED_LS_KEY = 'satmonitor-resolved-alarm-ids';
-function loadResolvedIds(): Set<number> {
-  try {
-    const raw = localStorage.getItem(RESOLVED_LS_KEY);
-    return new Set(raw ? (JSON.parse(raw) as number[]) : []);
-  } catch {
-    return new Set();
-  }
-}
-function saveResolvedId(id: number) {
-  const set = loadResolvedIds();
-  set.add(id);
-  try { localStorage.setItem(RESOLVED_LS_KEY, JSON.stringify(Array.from(set))); } catch {}
-}
-// 从前端标记 ID 提取后端 alarm id（形如 "alarm-123"）
-function parseAlarmId(alertId: string): number | null {
-  const m = String(alertId).match(/^alarm-(\d+)$/);
-  return m ? Number(m[1]) : null;
 }
 
 /* ---------- 报警音效 ---------- */
@@ -185,7 +163,8 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
 
   useEffect(() => {
     refreshAlerts();
-    const timer = setInterval(refreshAlerts, 30_000);
+    // 5分钟刷新一次
+    const timer = setInterval(refreshAlerts, 300_000);
     return () => clearInterval(timer);
   }, [refreshAlerts]);
 
@@ -210,30 +189,6 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
   const latestPending = alerts
     .filter((a) => a.status === 'pending')
     .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())[0];
-
-  const handleResolve = async (id: string) => {
-    // 乐观更新
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, status: 'resolved' as const } : a))
-    );
-    // 同步外层报警状态：无其他 pending 时立即恢复正常并关闭弹窗
-    if (initialAlerting === undefined) {
-      const stillPending = alerts.some((a) => a.id !== id && a.status === 'pending');
-      setIsAlerting(stillPending);
-      if (!stillPending) setListOpen(false);
-    }
-    // 调后端闭环接口（如果是真实告警 ID）
-    const alarmId = parseAlarmId(id);
-    if (alarmId != null) {
-      // 先本地持久化，防止 30s 轮询在接口返回前重新触发告警
-      saveResolvedId(alarmId);
-      try {
-        await alarmApi.close(alarmId);
-      } catch (err) {
-        console.error('alarmApi.close failed', err);
-      }
-    }
-  };
 
   // 实时抓拍取图：POST /v1/sat/cameras/{deviceSerial}/capture
   const captureImage = useCallback(async (alert: AlertItem) => {
@@ -398,31 +353,28 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
               </div>
 
               {/* 查看全部报警 — 正常状态下也可查看历史 */}
-              {alerts.length > 0 && (
-                <button
-                  onClick={() => setListOpen(true)}
-                  className={`shrink-0 inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border transition-colors cursor-pointer ${
-                    isAlerting
-                      ? 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
-                      : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
-                  }`}
-                >
-                  <List className="w-3.5 h-3.5" />
-                  查看全部 ({isAlerting ? pendingCount : alerts.length})
-                </button>
-              )}
+              <button
+                onClick={() => setListOpen(true)}
+                className={`shrink-0 inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-md border transition-colors cursor-pointer ${
+                  isAlerting
+                    ? 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+                    : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                查看全部{isAlerting ? ` (${pendingCount})` : ''}
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 报警列表弹窗 */}
+      {/* 告警记录弹窗：5个状态Tab + 分页 + 确认/处置/闭环操作 */}
       <AlertListDialog
         open={listOpen}
-        alerts={alerts}
         onClose={() => setListOpen(false)}
-        onResolve={handleResolve}
         onViewImage={handleViewImage}
+        onActionComplete={refreshAlerts}
       />
 
       {/* 图片详情弹窗：实时抓拍画面 */}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Cloud, CloudRain, Sun, Thermometer } from 'lucide-react';
-import { httpGet, getStationIdFromStorage } from '@/src/http/client';
+import { httpGet, getEffectiveStationId } from '@/src/http/client';
 import { snowApi, snowExecLogApi, weatherApi, environmentApi } from '@/src/http/api';
 import type { SystemDetail, TemperatureChartItem, SatWeatherDayVO } from '@/src/http/types';
 import ThresholdBarChart from './ThresholdBarChart';
@@ -68,7 +68,7 @@ export default function EnvironmentalInfo() {
 
   // 年度融雪统计：分别按 execType=3（自测）和全部统计 total
   const fetchSnowStats = useCallback(async () => {
-    const stationId = getStationIdFromStorage();
+    const stationId = getEffectiveStationId();
     try {
       const [testsRes, allRes] = await Promise.all([
         snowExecLogApi.getPage({ pageNum: 1, pageSize: 1, stationId, execType: 3 }).catch(() => null),
@@ -86,8 +86,7 @@ export default function EnvironmentalInfo() {
 
   // 天气预报 + 环境统计（雪天预测/实测）+ 当前环境（湿度）
   const fetchWeatherAndEnv = useCallback(async () => {
-    const stationId = getStationIdFromStorage();
-    if (!stationId) return;
+    const stationId = getEffectiveStationId();
     try {
       const [forecastRes, envCurrentRes, envStatsRes] = await Promise.all([
         weatherApi.getForecast(stationId).catch(() => null),
@@ -139,7 +138,8 @@ export default function EnvironmentalInfo() {
 
   useEffect(() => {
     fetchData();
-    timerRef.current = setInterval(fetchData, 3600_000);
+    // 湿度5分钟更新一次，整体5分钟刷新
+    timerRef.current = setInterval(fetchData, 300_000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchData]);
 

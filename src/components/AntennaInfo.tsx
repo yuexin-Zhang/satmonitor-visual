@@ -17,7 +17,6 @@ const ANTENNA_CONST = {
   azimuth: '192°',
   elevation: '40°',
   frequency: { name: '浙江一套', value: 3825, polarization: '垂直(V)', symbolRate: 6780 },
-  displacement: { horizontal: '0.001°', vertical: '-0.002°', status: '正常' },
 };
 // 信号阈值缺省（接口未返回或未登录时使用）
 const DEFAULT_SIGNAL_MIN = 70;
@@ -149,10 +148,11 @@ export default function AntennaInfo() {
     return !isNaN(num) && num < signalMin ? '预警' : '正常';
   })();
 
-  const { satellite, azimuth, elevation, frequency: freq, displacement } = ANTENNA_CONST;
-  const displacementHorizontal = displacement.horizontal;
-  const displacementVertical = displacement.vertical;
-  const displacementStatus = displacement.status;
+  const { satellite, azimuth, elevation, frequency: freq } = ANTENNA_CONST;
+  // 位移状况：水平取 yaw，垂直取 pitch（来自 /v1/snow/detail）
+  const displacementHorizontal = deviceData?.yaw || '--';
+  const displacementVertical = deviceData?.pitch || '--';
+  const displacementStatus = '正常';
   const signalAlertCount = riskCounts.signal;
   const offsetAlertCount = riskCounts.offset;
   const threshold = signalMin;
@@ -217,7 +217,7 @@ export default function AntennaInfo() {
                     <div className="flex-1 h-px bg-gradient-to-r from-amber-500/30 to-transparent" />
                     <div className="flex items-center gap-1">
                       <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      <span className="text-[clamp(11px,0.9vw,15px)] text-emerald-400 font-medium">{displacementStatus === 'normal' ? '正常' : displacementStatus}</span>
+                      <span className="text-[clamp(11px,0.9vw,15px)] text-emerald-400 font-medium">{displacementStatus}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 text-[clamp(11px,0.9vw,15px)]">
