@@ -208,6 +208,49 @@ export type DashboardEnergyStats = Record<string, any>;
 // /v1/sat/dashboard/risk-stats 风险事件统计（后端自定义结构）
 export type DashboardRiskStats = Record<string, any>;
 
+// ==================== 111.天气数据 ====================
+// /v1/sat/weather/forecast 单日天气预报
+export interface SatWeatherDayVO {
+  condition: string;  // 天气状况
+  temp: number;       // 最高温度(℃)
+  icon: string;       // 图标标识(Sun/Cloud/CloudRain等)
+}
+
+// /v1/sat/weather/forecast 三天天气预报
+export interface SatWeatherForecastVO {
+  stationId: number;
+  today: SatWeatherDayVO;
+  tomorrow: SatWeatherDayVO;
+  dayAfterTomorrow: SatWeatherDayVO;
+}
+
+// ==================== 112.环境数据 ====================
+// /v1/sat/environment/current 当前环境数据
+export interface SatEnvironmentCurrentVO {
+  stationId: number;
+  organizationName: string;  // 台站名称
+  humidity: number;          // 环境湿度(%)
+  airTemperature: number;    // 空气温度(℃)
+  rainSnow: string;          // 雨雪状态
+}
+
+// /v1/sat/environment/stats 环境统计(雪天等)
+export interface SatEnvironmentStatsVO {
+  stationId: number;
+  year: number;              // 统计年份
+  snowForecastDays: number;  // 天气预测有雪天数
+  snowDetectedCount: number; // 实测有雪累计次数
+}
+
+// ==================== 113.日凌干扰 ====================
+// /v1/sat/sun-interference/status 日凌干扰状态
+export interface SatSunInterferenceVO {
+  stationId: number;
+  todayAlert: boolean;  // 今日是否有日凌预警
+  nextPeriod: string;   // 距离最近日凌时间窗口
+  yearlyCount: number;  // 本年度日凌预警累计次数
+}
+
 // ==================== Dashboard 独立接口（备用）====================
 export interface OverviewData {
   siteName: string;

@@ -69,8 +69,8 @@
 > 固定默认值），不再注入随机/虚假数据。原 `src/http/mock.ts` 文件保留但大屏不再引用。
 >
 > **关于 (mock) 标记**：为方便区分真实接口数据和默认值，在 UI 上对使用静态常量的字段添加了
-> **(mock)** 标记（琥珀色小字体）。包括：卫星名称/方位角/仰角/频率（AntennaInfo）、天气/湿度（EnvironmentalInfo）、
-> 温度/功率阈值（ThresholdBarChart）、日凌信息（SunInterference）。
+> **(mock)** 标记（琥珀色小字体）。包括：卫星名称/方位角/仰角/频率（AntennaInfo）、
+> 温度/功率阈值（ThresholdBarChart）。
 
 ---
 
@@ -133,6 +133,25 @@
 | 接口 | 方法 & 路径 | 大屏是否调用 | 调用位置 |
 |------|------------|:----------:|---------|
 | `getPage` | `GET /v1/sat/snow-exec-logs/page` | ✅ 调用 | OperationsRecord 运维记录 / EnvironmentalInfo 融雪统计（按 execType 聚合，**本次接入**） |
+
+### weatherApi（`/v1/sat/weather/*`，需登录，111.天气数据）
+
+| 接口 | 方法 & 路径 | 大屏是否调用 | 调用位置 |
+|------|------------|:----------:|---------|
+| `getForecast` | `GET /v1/sat/weather/forecast` | ✅ 调用 | EnvironmentalInfo 三天天气卡片（**本次接入**） |
+
+### environmentApi（`/v1/sat/environment/*`，需登录，112.环境数据）
+
+| 接口 | 方法 & 路径 | 大屏是否调用 | 调用位置 |
+|------|------------|:----------:|---------|
+| `getCurrent` | `GET /v1/sat/environment/current` | ✅ 调用 | EnvironmentalInfo 湿度（**本次接入**） |
+| `getStats` | `GET /v1/sat/environment/stats` | ✅ 调用 | EnvironmentalInfo 雪天预测/实测统计（**本次接入**） |
+
+### sunInterferenceApi（`/v1/sat/sun-interference/*`，需登录，113.日凌干扰）
+
+| 接口 | 方法 & 路径 | 大屏是否调用 | 调用位置 |
+|------|------------|:----------:|---------|
+| `getStatus` | `GET /v1/sat/sun-interference/status` | ✅ 调用 | SunInterference 日凌信息（**本次接入**） |
 
 > 说明：标 ⚪ 的接口并非「遗漏」，而是功能上被其它接口覆盖（如 `getXxxChart` 被聚合版覆盖、
 > `getExtraInfo` 被含更全字段的 `getDetail` 覆盖、`getOverview` 属多站总览）。如后续需要可随时接入。
@@ -255,12 +274,27 @@ Response: DashboardRiskStats（后端自定义结构，前端防御性读取 sig
 
 | UI 元素 | 数据字段 | 来源 | 接口 |
 |---------|---------|------|------|
-| 日凌标签 | — | ⚪ | 静态；**UI 显示 (mock) 标记** |
-| 今日是否有预警 | `todayAlert` | 🔵 | 中性默认 `false`，**Swagger 无对应接口**；**UI 显示 (mock) 标记** |
-| 距离最近日凌时间 | `nextPeriod` | 🔵 | 中性默认 `暂无数据`，**Swagger 无对应接口**；**UI 显示 (mock) 标记** |
-| 本年度预警累计次数 | `yearlyCount` | 🔵 | 中性默认 `0`，**Swagger 无对应接口**；**UI 显示 (mock) 标记** |
+| 日凌标签 | — | ⚪ | 静态 |
+| 今日是否有预警 | `todayAlert` | ✅ | `GET /v1/sat/sun-interference/status?stationId=` → `SatSunInterferenceVO.todayAlert`（**本次接入**）；接口失败回退默认 `false` |
+| 距离最近日凌时间 | `nextPeriod` | ✅ | 同上 → `SatSunInterferenceVO.nextPeriod`（**本次接入**）；接口失败回退默认 `暂无数据` |
+| 本年度预警累计次数 | `yearlyCount` | ✅ | 同上 → `SatSunInterferenceVO.yearlyCount`（**本次接入**）；接口失败回退默认 `0` |
 
-**后端建议**：新增 `/v1/sat/sun-interference/next` 与 `/v1/sat/sun-interference/yearly-stats` 接口；或扩展 `SatAlarmRecordVO.alarmType='sun-interference'` 后由前端聚合。
+**关键接口**：
+
+```http
+# 日凌干扰状态（本次新增，113.日凌干扰）
+GET /api/v1/sat/sun-interference/status?stationId=1
+Response: SatSunInterferenceVO = {
+  stationId: 1,
+  todayAlert: false,
+  nextPeriod: '2026-07-15 14:30 ~ 15:00',
+  yearlyCount: 3
+}
+```
+
+**API 封装**：`sunInterferenceApi.getStatus(stationId)`（`src/http/api.ts`）— **本次接入**
+
+**刷新策略**：每 5 分钟自动轮询一次。
 
 ---
 
@@ -397,14 +431,14 @@ Response: Ys7CaptureVO { deviceSerial, channelNo, picUrl }
 
 | UI 元素 | 数据字段 | 来源 | 接口 |
 |---------|---------|------|------|
-| 三天天气卡片（今天/明天/后天） | `weather[]` | 🔵 | 中性默认（**Swagger 无天气接口**），建议接入第三方天气 API 或后端转发；**UI 显示 (mock) 标记** |
+| 三天天气卡片（今天/明天/后天） | `weather[]` | ✅ | `GET /v1/sat/weather/forecast?stationId=` → today/tomorrow/dayAfterTomorrow（**本次接入**）；接口失败回退默认占位 |
 | 雨雪传感器文本 | `rainSnow` | ✅ | `GET /v1/snow/detail?tag=1` → `SystemDetail.rainSnow` |
 | 雨雪传感器状态（正常/异常） | — | ✅ | 基于 `rainSnow` 文本判断（正常态） |
-| 湿度百分比 | `humidityAvg` | 🔵 | 中性默认 60（**Swagger 无湿度接口**）；**UI 显示 (mock) 标记** |
+| 湿度百分比 | `humidityAvg` | ✅ | `GET /v1/sat/environment/current?stationId=` → `SatEnvironmentCurrentVO.humidity`（**本次接入**）；接口失败回退默认 60 |
 | **温度趋势柱状图（最近 6 小时）** | temp history | ✅ | `GET /v1/snow/temperature-chart-by-level?tag=1&startTime=&endTime=&timeLevel=1` → 取空气温度传感器；无数据显示「暂无数据」占位 |
 | 温度阈值（35°C） | — | 🟡 | 硬编码阈值；**UI 显示 (mock) 标记** |
-| 本年度·天气预测有雪天数 | `snowForecastDays` | 🔵 | 中性默认 0，**Swagger 无对应接口**；**UI 显示 (mock) 标记** |
-| 本年度·实测有雪累计次数 | `snowDetectedCount` | 🔵 | 中性默认 0，**Swagger 无对应接口**；**UI 显示 (mock) 标记** |
+| 本年度·天气预测有雪天数 | `snowForecastDays` | ✅ | `GET /v1/sat/environment/stats?stationId=&year=` → `SatEnvironmentStatsVO.snowForecastDays`（**本次接入**）；接口失败回退默认 0 |
+| 本年度·实测有雪累计次数 | `snowDetectedCount` | ✅ | 同上 → `SatEnvironmentStatsVO.snowDetectedCount`（**本次接入**）；接口失败回退默认 0 |
 | 本年度·执行融雪测试次数 | `meltTests` | ✅ | `GET /v1/sat/snow-exec-logs/page?execType=3` 取 `total`（**本次接入**） |
 | 本年度·执行融雪功能次数 | `meltExecutions` | ✅ | `GET /v1/sat/snow-exec-logs/page` 取 `total`（**本次接入**） |
 
@@ -429,12 +463,36 @@ GET /api/v1/snow/detail?tag=1
 GET /api/v1/sat/snow-exec-logs/page?pageNum=1&pageSize=1&execType=3   # meltTests 取 total
 GET /api/v1/sat/snow-exec-logs/page?pageNum=1&pageSize=1              # meltExecutions 取 total
 # execType: 1=自动 2=手动 3=自测；可选 stationId 过滤
+
+# 三天天气预报（本次新增）
+GET /api/v1/sat/weather/forecast?stationId=1
+Response: SatWeatherForecastVO = {
+  stationId: 1,
+  today:        { condition: '晴朗', temp: 27, icon: 'Sun' },
+  tomorrow:     { condition: '多云', temp: 25, icon: 'Cloud' },
+  dayAfterTomorrow: { condition: '小雨', temp: 23, icon: 'CloudRain' }
+}
+
+# 当前环境数据（湿度/雨雪等，本次新增）
+GET /api/v1/sat/environment/current?stationId=1
+Response: SatEnvironmentCurrentVO = {
+  stationId, organizationName, humidity: 65, airTemperature: 27.5, rainSnow: '无雨雪'
+}
+
+# 环境统计（雪天预测/实测，本次新增）
+GET /api/v1/sat/environment/stats?stationId=1&year=2026
+Response: SatEnvironmentStatsVO = {
+  stationId, year: 2026, snowForecastDays: 5, snowDetectedCount: 12
+}
 ```
 
 **API 封装**：
 - `snowApi.getTemperatureChartByLevel({ tag, startTime, endTime, timeLevel })`
 - `snowApi.getDetail(1)`
 - `snowExecLogApi.getPage({ pageNum, pageSize, stationId, execType })` — **本次接入**
+- `weatherApi.getForecast(stationId)` — **本次接入**（111.天气数据）
+- `environmentApi.getCurrent(stationId)` — **本次接入**（112.环境数据）
+- `environmentApi.getStats(stationId, year?)` — **本次接入**（112.环境数据）
 
 **刷新策略**：每 1 小时刷新一次（`setInterval(fetchData, 3600_000)`）。
 
@@ -601,14 +659,11 @@ Response: SatStationOverviewVO {
 
 | UI 模块 | 字段 | 建议新增接口 |
 |---------|------|-------------|
-| SunInterference | todayAlert / nextPeriod / yearlyCount | `GET /v1/sat/sun-interference/next` + `/yearly-stats` |
-| EnvironmentalInfo | weather（三天天气） | `GET /v1/weather/forecast?lat=&lng=` 或后端转发第三方 |
-| EnvironmentalInfo | humidityAvg（湿度） | 扩展 `SystemDetail.humidity` 字段 |
-| EnvironmentalInfo | snowForecastDays / snowDetectedCount | 扩展 dashboard 统计接口返回 |
 | AntennaInfo | satellite / azimuth / elevation / frequency / displacement | `extra-info` 实测无此数据，需后端新增专门接口（如 `/v1/sat/antenna/info`） |
 
 > 以上字段当前均使用**中性静态常量**（0 / `暂无数据` / 固定默认值），不再注入随机 mock 数据。
 > 注：原 Footer `SYSTEM_UPTIME` 无对应接口，已改用 `stationApi.getOverview` 的 `lastReportTime` 替代（见 §12），不再列入本表。
+> 注：SunInterference（日凌）、EnvironmentalInfo（天气/湿度/雪天统计）已接入 111/112/113 接口，不再列入本表。
 
 ### ✅ 本次新接入的真实接口
 
@@ -618,6 +673,10 @@ Response: SatStationOverviewVO {
 | AntennaInfo | 信号/偏移预警次数 | `GET /v1/sat/dashboard/risk-stats` |
 | PowerInfo | 年度累计耗电 | `GET /v1/sat/dashboard/energy-stats` |
 | EnvironmentalInfo | 融雪测试/执行次数 | `GET /v1/sat/snow-exec-logs/page`（按 execType） |
+| EnvironmentalInfo | 三天天气预报 | `GET /v1/sat/weather/forecast`（111.天气数据） |
+| EnvironmentalInfo | 湿度 | `GET /v1/sat/environment/current`（112.环境数据） |
+| EnvironmentalInfo | 雪天预测/实测统计 | `GET /v1/sat/environment/stats`（112.环境数据） |
+| SunInterference | 日凌预警状态/时间/次数 | `GET /v1/sat/sun-interference/status`（113.日凌干扰） |
 | MaintenanceTips | 报警抓拍图 | `POST /v1/sat/cameras/{deviceSerial}/capture` |
 | Footer | NETWORK 在线状态 / LAST_REPORT | `GET /v1/sat/stations/{stationId}/overview` |
 
@@ -632,6 +691,8 @@ Response: SatStationOverviewVO {
 | PositionStatus | yaw / roll / pitch | `/v1/snow/detail`（⚠️ 组件当前未渲染，见 §3） |
 | EnvironmentalInfo | rainSnow / airTemperature / potTemperature / tempsensors | `/v1/snow/detail` |
 | EnvironmentalInfo | 温度趋势柱状图 / 融雪统计 | `/v1/snow/temperature-chart-by-level` + `/v1/sat/snow-exec-logs/page` |
+| EnvironmentalInfo | 三天天气 / 湿度 / 雪天统计 | `/v1/sat/weather/forecast` + `/v1/sat/environment/current` + `/v1/sat/environment/stats` |
+| SunInterference | 日凌预警状态/时间/次数 | `/v1/sat/sun-interference/status` |
 | PowerInfo | voltage / current / relays / 年度耗电 | `/v1/snow/detail` + `/v1/sat/dashboard/energy-stats` |
 | PowerInfo | 功率曲线柱状图 | `/v1/snow/power-chart-by-level` |
 | MaintenanceTips | 报警列表（待处理/已处理）/ 标记处理 / 抓拍图 | `/v1/sat/alarms/records/page` + `/v1/sat/alarms/records/{id}/close` + `/v1/sat/cameras/{serial}/capture` |
@@ -681,5 +742,18 @@ export const cameraApi = {
 export const stationApi = {
   getOverview: (stationId) => GET /v1/sat/stations/{stationId}/overview  // SatStationOverviewVO  ✅ 调用(Footer 在线状态/最后上报)
   // 其余 getPage/getForm/create/update/remove/getOptions 属管理后台，大屏未用
+};
+
+export const weatherApi = {                           // 111.天气数据
+  getForecast: (stationId) => GET /v1/sat/weather/forecast      // SatWeatherForecastVO  ✅ 调用(EnvironmentalInfo 三天天气)
+};
+
+export const environmentApi = {                      // 112.环境数据
+  getCurrent: (stationId) => GET /v1/sat/environment/current    // SatEnvironmentCurrentVO  ✅ 调用(EnvironmentalInfo 湿度)
+  getStats: (stationId, year?) => GET /v1/sat/environment/stats  // SatEnvironmentStatsVO  ✅ 调用(EnvironmentalInfo 雪天统计)
+};
+
+export const sunInterferenceApi = {                  // 113.日凌干扰
+  getStatus: (stationId) => GET /v1/sat/sun-interference/status  // SatSunInterferenceVO  ✅ 调用(SunInterference)
 };
 ```

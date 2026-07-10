@@ -64,9 +64,21 @@ function useAlarmSound(enabled: boolean) {
       window.clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
+    // 先静音 gain，确保立即无声
+    if (gainRef.current && audioCtxRef.current) {
+      try {
+        gainRef.current.gain.cancelScheduledValues(audioCtxRef.current.currentTime);
+        gainRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
+      } catch {}
+    }
     if (oscRef.current) {
       try { oscRef.current.stop(); } catch {}
+      try { oscRef.current.disconnect(); } catch {}
       oscRef.current = null;
+    }
+    if (gainRef.current) {
+      try { gainRef.current.disconnect(); } catch {}
+      gainRef.current = null;
     }
     if (audioCtxRef.current) {
       try { audioCtxRef.current.close(); } catch {}
@@ -82,21 +94,30 @@ function useAlarmSound(enabled: boolean) {
     audioCtxRef.current = ctx;
     const gain = ctx.createGain();
     gain.connect(ctx.destination);
-    gain.gain.value = 0.15;
+    gain.gain.value = 0;
     gainRef.current = gain;
     let isHigh = true;
     const toggleFreq = () => {
-      if (oscRef.current) { try { oscRef.current.stop(); } catch {} }
+      if (oscRef.current) {
+        try { oscRef.current.stop(); } catch {}
+        try { oscRef.current.disconnect(); } catch {}
+      }
       const osc = ctx.createOscillator();
-      osc.type = 'square';
-      osc.frequency.value = isHigh ? 880 : 440;
+      osc.type = 'sine';
+      osc.frequency.value = isHigh ? 660 : 440;
       osc.connect(gain);
+      const now = ctx.currentTime;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.06, now + 0.05);  // 50ms 渐入
+      gain.gain.setValueAtTime(0.06, now + 0.5);             // 持续
+      gain.gain.linearRampToValueAtTime(0, now + 0.8);       // 300ms 渐出
       osc.start();
       oscRef.current = osc;
       isHigh = !isHigh;
     };
     toggleFreq();
-    intervalRef.current = window.setInterval(toggleFreq, 400);
+    intervalRef.current = window.setInterval(toggleFreq, 850);
   }, [stop]);
 
   useEffect(() => {
@@ -195,12 +216,19 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
     setAlerts((prev) =>
       prev.map((a) => (a.id === id ? { ...a, status: 'resolved' as const } : a))
     );
+    // 同步外层报警状态：无其他 pending 时立即恢复正常并关闭弹窗
+    if (initialAlerting === undefined) {
+      const stillPending = alerts.some((a) => a.id !== id && a.status === 'pending');
+      setIsAlerting(stillPending);
+      if (!stillPending) setListOpen(false);
+    }
     // 调后端闭环接口（如果是真实告警 ID）
     const alarmId = parseAlarmId(id);
     if (alarmId != null) {
+      // 先本地持久化，防止 30s 轮询在接口返回前重新触发告警
+      saveResolvedId(alarmId);
       try {
         await alarmApi.close(alarmId);
-        saveResolvedId(alarmId);
       } catch (err) {
         console.error('alarmApi.close failed', err);
       }
@@ -276,20 +304,18 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
   return (
     <>
       <div className="relative">
-        {/* 静音按钮 — 左上角 */}
-        {isAlerting && (
-          <button
-            onClick={() => setSoundEnabled((v) => !v)}
-            className="absolute -top-9 left-0 px-2 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors z-10"
-            title={soundEnabled ? '关闭报警音' : '开启报警音'}
-          >
-            {soundEnabled ? (
-              <Volume2 className="w-4 h-4 text-red-400" />
-            ) : (
-              <VolumeX className="w-4 h-4 text-slate-400" />
-            )}
-          </button>
-        )}
+        {/* 静音按钮 - 左上角，始终显示 */}
+        <button
+          onClick={() => setSoundEnabled((v) => !v)}
+          className="absolute -top-9 left-0 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors z-20"
+          title={soundEnabled ? '关闭报警音' : '开启报警音'}
+        >
+          {soundEnabled ? (
+            <Volume2 className="w-4 h-4 text-sky-400" />
+          ) : (
+            <VolumeX className="w-4 h-4 text-slate-500" />
+          )}
+        </button>
 
         {/* 模拟切换按钮 */}
         <button

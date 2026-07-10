@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Cloud, CloudRain, Sun, Thermometer } from 'lucide-react';
 import { httpGet, getStationIdFromStorage } from '@/src/http/client';
-import { snowApi, snowExecLogApi } from '@/src/http/api';
-import type { SystemDetail, TemperatureChartItem } from '@/src/http/types';
+import { snowApi, snowExecLogApi, weatherApi, environmentApi } from '@/src/http/api';
+import type { SystemDetail, TemperatureChartItem, SatWeatherDayVO } from '@/src/http/types';
 import ThresholdBarChart from './ThresholdBarChart';
 
 const iconMap: Record<string, { Icon: typeof Sun; color: string }> = {
@@ -19,14 +19,11 @@ const iconMap: Record<string, { Icon: typeof Sun; color: string }> = {
 // 温度阈值：超过 35°C 红色预警（高温）
 const TEMP_THRESHOLD = 35;
 
-// 以下指标后端暂无对应接口，使用中性默认值（非 mock 数据）：
-// - 三天天气（Swagger 无天气接口）
-// - 湿度（SystemDetail 暂无 humidity 字段）
-// - 天气预测有雪天数 / 实测有雪累计次数
-const DEFAULT_WEATHER = [
-  { day: '今天', condition: '晴朗', temp: 27, humidity: 65, icon: 'Sun' },
-  { day: '明天', condition: '多云', temp: 25, humidity: 70, icon: 'Cloud' },
-  { day: '后天', condition: '小雨', temp: 23, humidity: 85, icon: 'CloudRain' },
+// 默认天气数据（接口失败时回退）
+const DEFAULT_WEATHER: { day: string; data: SatWeatherDayVO | null }[] = [
+  { day: '今天', data: null },
+  { day: '明天', data: null },
+  { day: '后天', data: null },
 ];
 const DEFAULT_HUMIDITY = 60;
 const DEFAULT_YEARLY_STATS = {
@@ -62,6 +59,10 @@ export default function EnvironmentalInfo() {
   const [refreshTime, setRefreshTime] = useState<Date>(new Date());
   // 年度融雪统计：meltTests(自测 execType=3) / meltExecutions(全部) 来自 /v1/sat/snow-exec-logs/page
   const [yearlyStats, setYearlyStats] = useState(DEFAULT_YEARLY_STATS);
+  // 三天天气预报 来自 /v1/sat/weather/forecast
+  const [forecast, setForecast] = useState<SatWeatherDayVO[] | null>(null);
+  // 环境数据（湿度）来自 /v1/sat/environment/current
+  const [humidity, setHumidity] = useState<number | null>(null);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -78,6 +79,34 @@ export default function EnvironmentalInfo() {
         meltTests: testsRes?.total ?? prev.meltTests,
         meltExecutions: allRes?.total ?? prev.meltExecutions,
       }));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // 天气预报 + 环境统计（雪天预测/实测）+ 当前环境（湿度）
+  const fetchWeatherAndEnv = useCallback(async () => {
+    const stationId = getStationIdFromStorage();
+    if (!stationId) return;
+    try {
+      const [forecastRes, envCurrentRes, envStatsRes] = await Promise.all([
+        weatherApi.getForecast(stationId).catch(() => null),
+        environmentApi.getCurrent(stationId).catch(() => null),
+        environmentApi.getStats(stationId).catch(() => null),
+      ]);
+      if (forecastRes) {
+        setForecast([forecastRes.today, forecastRes.tomorrow, forecastRes.dayAfterTomorrow]);
+      }
+      if (envCurrentRes && typeof envCurrentRes.humidity === 'number') {
+        setHumidity(envCurrentRes.humidity);
+      }
+      if (envStatsRes) {
+        setYearlyStats((prev) => ({
+          ...prev,
+          snowForecastDays: envStatsRes.snowForecastDays ?? prev.snowForecastDays,
+          snowDetectedCount: envStatsRes.snowDetectedCount ?? prev.snowDetectedCount,
+        }));
+      }
     } catch {
       /* ignore */
     }
@@ -105,7 +134,8 @@ export default function EnvironmentalInfo() {
       .catch(() => {});
     fetchTempHistory();
     fetchSnowStats();
-  }, [fetchTempHistory, fetchSnowStats]);
+    fetchWeatherAndEnv();
+  }, [fetchTempHistory, fetchSnowStats, fetchWeatherAndEnv]);
 
   useEffect(() => {
     fetchData();
@@ -113,11 +143,13 @@ export default function EnvironmentalInfo() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [fetchData]);
 
-  const weather = DEFAULT_WEATHER;
+  const weatherDays = forecast
+    ? forecast.map((data, idx) => ({ day: DEFAULT_WEATHER[idx].day, data }))
+    : DEFAULT_WEATHER;
   const rainSnowSensor = deviceData?.rainSnow
     ? { status: 'normal', text: deviceData.rainSnow }
     : { status: 'normal', text: '无雨雪' };
-  const humidityAvg = DEFAULT_HUMIDITY;
+  const humidityAvg = humidity ?? DEFAULT_HUMIDITY;
   const tempsensors = deviceData?.tempsensors ?? [];
 
   const tempThreshold = TEMP_THRESHOLD;
@@ -134,17 +166,21 @@ export default function EnvironmentalInfo() {
       <div className="panel-content flex-1 flex flex-col gap-1 overflow-y-auto p-2">
         {/* 三天天气卡片 */}
         <div className="shrink-0 grid grid-cols-3 gap-2">
-          {weather.map((item, idx) => {
-            const { Icon, color } = iconMap[item.icon] ?? { Icon: Sun, color: 'text-amber-400' };
+          {weatherDays.map((item, idx) => {
+            const dayData = item.data;
+            const condition = dayData?.condition ?? '暂无';
+            const temp = dayData?.temp ?? '--';
+            const iconKey = dayData?.icon ?? 'Sun';
+            const { Icon, color } = iconMap[iconKey] ?? { Icon: Sun, color: 'text-amber-400' };
             return (
               <div key={idx} className={`${idx === 0 ? 'bg-sky-900/10 border-sky-800/30' : 'bg-slate-800/10 border-slate-700/30'} px-2 py-1 rounded border transition-colors`}>
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-0.5">
                     <div className="text-[clamp(11px,0.9vw,15px)] text-slate-400">{item.day}</div>
-                    <div className="text-[clamp(13px,1.1vw,18px)] text-slate-200 font-bold">{item.temp}°C</div>
+                    <div className="text-[clamp(13px,1.1vw,18px)] text-slate-200 font-bold">{temp}°C</div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className={`text-[clamp(11px,0.9vw,15px)] uppercase font-bold tracking-tighter ${color}`}>{item.condition}</div>
+                    <div className={`text-[clamp(11px,0.9vw,15px)] uppercase font-bold tracking-tighter ${color}`}>{condition}</div>
                     <Icon className={`${color} flex-shrink-0`} style={{ width: 'clamp(18px, 1.8vw, 28px)', height: 'clamp(18px, 1.8vw, 28px)' }} />
                   </div>
                 </div>

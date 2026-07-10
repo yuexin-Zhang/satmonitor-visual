@@ -13,6 +13,9 @@ const FALLBACK_URL =
   'https://open.ys7.com/v3/openlive/GN1818878_1_1.m3u8?expire=1777856899&id=968800755977609216&t=77eb7bbc8fb13026968fefe86d04905a78e657790802ea811bc66dd7222ad731&ev=101&supportH265=1';
 const FALLBACK_NAME = 'GN1818878_1_1';
 
+// SRS 直播流（优先于萤石，地址配置在 .env：VITE_SRS_HLS_CHUNAN）
+const DEFAULT_SRS_URL = import.meta.env.VITE_SRS_HLS_CHUNAN || '';
+
 interface LiveVideoProps {
   /** 指定设备序列号，默认 GN1818878 */
   deviceSerial?: string;
@@ -22,6 +25,8 @@ interface LiveVideoProps {
   fallbackUrl?: string;
   /** 是否启用，默认 true */
   enabled?: boolean;
+  /** SRS 直播流地址；传空字符串禁用 SRS，不传则读 VITE_SRS_HLS_CHUNAN */
+  srsUrl?: string;
 }
 
 export default function LiveVideo({
@@ -29,12 +34,13 @@ export default function LiveVideo({
   channelNo = DEFAULT_CHANNEL_NO,
   fallbackUrl = FALLBACK_URL,
   enabled = true,
+  srsUrl = DEFAULT_SRS_URL,
 }: LiveVideoProps) {
   // 最终用于播放的地址
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
   const [streamName, setStreamName] = useState<string>(`${deviceSerial}_${channelNo}`);
   // 数据来源标记，便于调试
-  const [source, setSource] = useState<'backend' | 'ys7-direct' | 'fallback' | null>(null);
+  const [source, setSource] = useState<'srs' | 'backend' | 'ys7-direct' | 'fallback' | null>(null);
   // 是否使用 iframe 播放（针对 playerUrl）
   const [useIframe, setUseIframe] = useState(false);
 
@@ -43,10 +49,13 @@ export default function LiveVideo({
   const [key, setKey] = useState(0);
   const playerRef = useRef<any>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // SRS 播放失败后置 true，自动重试时跳过 SRS 直接降级到萤石；手动重试时重置
+  const skipSrsRef = useRef(false);
 
   /**
    * 取流主流程：
-   * 1) 优先调后端 /v1/sat/cameras/live-address（自动使用本地 monitor_token / admin_token）
+   * 0) 优先使用 SRS 直播流（配置在 .env，不走后端，流不过期）
+   * 1) 后端 /v1/sat/cameras/live-address（自动使用本地 monitor_token / admin_token）
    * 2) 失败（如 401）时降级：调 /v1/snow/ys7-token（公开免认证）拿萤石 token，再直接调萤石开放 API
    * 3) 仍失败时使用兜底地址（可能已过期，播放会触发 onError）
    * 拿到地址后根据 expireTime 安排下次刷新
@@ -54,6 +63,36 @@ export default function LiveVideo({
   const loadStream = useCallback(async () => {
     const serial = deviceSerial;
     const channel = channelNo;
+
+    // ---------- 第 0 级：SRS 直播流（配置在 .env，不走后端）----------
+    if (srsUrl && !skipSrsRef.current) {
+      try {
+        // 先探测 SRS 流是否可达（3 秒超时），避免 SRS 挂了时长时间卡在 loading
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
+        const resp = await fetch(srsUrl, { method: 'HEAD', signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!resp.ok) throw new Error(`SRS HTTP ${resp.status}`);
+        // 探测通过，使用 SRS 流播放
+        setStreamUrl(srsUrl);
+        setUseIframe(false);
+        setStreamName('SRS: chunan-cam1');
+        setSource('srs');
+        setError(null);
+        // SRS 流不过期，无需安排刷新
+        if (refreshTimerRef.current) {
+          clearTimeout(refreshTimerRef.current);
+          refreshTimerRef.current = null;
+        }
+        console.log('[LiveVideo] using SRS stream:', srsUrl);
+        return;
+      } catch (e: any) {
+        const reason = e?.name === 'AbortError' ? 'timeout(3s)' : e?.message || e;
+        console.warn('[LiveVideo] SRS probe failed, fallback to 萤石:', reason);
+        skipSrsRef.current = true;
+        // 继续走第 1 级（萤石）
+      }
+    }
 
     // ---------- 第 1 级：后端 live-address ----------
     try {
@@ -147,7 +186,7 @@ export default function LiveVideo({
     setError(
       '视频流接口暂不可用（可能原因：未登录、萤石账号未开通直播权限）。\n已切换到兜底地址，若地址过期将无法播放。',
     );
-  }, [deviceSerial, channelNo, fallbackUrl]);
+  }, [deviceSerial, channelNo, fallbackUrl, srsUrl]);
 
   /**
    * 根据过期时间安排下一次刷新。
@@ -197,13 +236,22 @@ export default function LiveVideo({
 
   const handleError = useCallback((e: any) => {
     console.error('[LiveVideo] playback error:', e, 'source=', source);
-    setError(
-      '视频流加载失败，请检查：\n' +
-        '1. 设备是否在线\n' +
-        '2. 萤石云直播权限是否开通（ret=60060 表示地址未绑定）\n' +
-        '3. 取流地址是否过期（token 会自动刷新，可点重试）\n' +
-        '4. 浏览器是否支持 H265（Chrome 对 H265 支持极差）',
-    );
+    if (source === 'srs') {
+      // SRS 失败 -> 标记跳过，8 秒后自动重试会降级到萤石
+      skipSrsRef.current = true;
+      setError(
+        'SRS 直播流连接失败，8 秒后自动降级到萤石云备用流。\n' +
+          '可能原因：SRS 服务未启动 / 端口未放行 / 流未推送到 SRS / HTTPS 页面加载 HTTP 流（Mixed Content）',
+      );
+    } else {
+      setError(
+        '视频流加载失败，请检查：\n' +
+          '1. 设备是否在线\n' +
+          '2. 萤石云直播权限是否开通（ret=60060 表示地址未绑定）\n' +
+          '3. 取流地址是否过期（token 会自动刷新，可点重试）\n' +
+          '4. 浏览器是否支持 H265（Chrome 对 H265 支持极差）',
+      );
+    }
     setLoading(false);
   }, [source]);
 
@@ -215,19 +263,23 @@ export default function LiveVideo({
   const handleRetry = useCallback(() => {
     setError(null);
     setLoading(true);
+    // 手动重试 -> 重置 SRS 跳过标记，优先再试 SRS
+    skipSrsRef.current = false;
     // 重新走一遍取流流程（不只是重载 player）
     loadStream().catch(() => {});
   }, [loadStream]);
 
-  // 播放错误时 8 秒后自动重试一次（应对偶发网络抖动）
+  // 播放错误时 8 秒后自动重试（SRS 失败后降级到萤石；不重置 skipSrsRef）
   useEffect(() => {
     if (error) {
       const timer = setTimeout(() => {
-        handleRetry();
+        setError(null);
+        setLoading(true);
+        loadStream().catch(() => {});
       }, 8000);
       return () => clearTimeout(timer);
     }
-  }, [error, handleRetry]);
+  }, [error, loadStream]);
 
   if (!enabled) {
     return (
@@ -327,7 +379,7 @@ export default function LiveVideo({
         </div>
 
         <div className="absolute bottom-2 left-2 z-20 text-[clamp(12px,1.05vw,17px)] text-white/40 font-mono flex flex-col">
-          <span>VIDEO_STREAM: {streamName}</span>
+          <span>VIDEO_STREAM: {streamName} {source && <span className="text-white/30">[{source}]</span>}</span>
           <span>{new Date().toLocaleString('zh-CN', { hour12: false })}</span>
         </div>
       </div>

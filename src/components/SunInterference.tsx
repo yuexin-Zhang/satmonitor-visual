@@ -1,11 +1,41 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Sun } from 'lucide-react';
+import { sunInterferenceApi } from '@/src/http/api';
+import { getStationIdFromStorage } from '@/src/http/client';
+import type { SatSunInterferenceVO } from '@/src/http/types';
 
-// 日凌信息：后端 Swagger 暂无对应接口，使用中性默认值（非 mock 数据）。
-// 待后端新增 /v1/sat/sun-interference/* 后接入即可。
+// 日凌信息：来自 /v1/sat/sun-interference/status
+// 接口失败时回退中性默认值
+const DEFAULT_DATA: SatSunInterferenceVO = {
+  stationId: 0,
+  todayAlert: false,
+  nextPeriod: '暂无数据',
+  yearlyCount: 0,
+};
+
 export default function SunInterference() {
-  const todayAlert = false;
-  const nextPeriod = '暂无数据';
-  const yearlyCount = 0;
+  const [data, setData] = useState<SatSunInterferenceVO>(DEFAULT_DATA);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const fetchData = useCallback(async () => {
+    const stationId = getStationIdFromStorage();
+    if (!stationId) return;
+    try {
+      const res = await sunInterferenceApi.getStatus(stationId);
+      if (res) setData(res);
+    } catch {
+      /* ignore，保持上次数据 */
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchData();
+    timerRef.current = setInterval(fetchData, 300_000); // 5 分钟刷新
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [fetchData]);
+
+  const { todayAlert, nextPeriod, yearlyCount } = data;
+
   return (
     <div className="glass-card h-full flex flex-col">
       <div className="panel-header">

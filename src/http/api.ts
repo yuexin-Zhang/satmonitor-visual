@@ -70,6 +70,10 @@ import type {
   SnowExtraInfo,
   DashboardEnergyStats,
   DashboardRiskStats,
+  SatWeatherForecastVO,
+  SatEnvironmentCurrentVO,
+  SatEnvironmentStatsVO,
+  SatSunInterferenceVO,
 } from './types';
 
 // ==================== 认证 ====================
@@ -332,6 +336,30 @@ export const snowApi = {
     httpGet<SnowDataHistoryItem[]>('/v1/snow/data-history', { params }),
   /** 萤石云 AccessToken（直播/抓图前换取） */
   getYs7Token: () => httpGet<Ys7TokenVO>('/v1/snow/ys7-token'),
+};
+
+// ==================== 111.天气数据 ====================
+export const weatherApi = {
+  /** 三天天气预报 */
+  getForecast: (stationId: number) =>
+    httpGet<SatWeatherForecastVO>('/v1/sat/weather/forecast', { params: { stationId } }),
+};
+
+// ==================== 112.环境数据 ====================
+export const environmentApi = {
+  /** 当前环境数据(湿度/雨雪等) */
+  getCurrent: (stationId: number) =>
+    httpGet<SatEnvironmentCurrentVO>('/v1/sat/environment/current', { params: { stationId } }),
+  /** 环境统计(雪天预测/实测) */
+  getStats: (stationId: number, year?: number) =>
+    httpGet<SatEnvironmentStatsVO>('/v1/sat/environment/stats', { params: { stationId, year } }),
+};
+
+// ==================== 113.日凌干扰 ====================
+export const sunInterferenceApi = {
+  /** 日凌干扰状态 */
+  getStatus: (stationId: number) =>
+    httpGet<SatSunInterferenceVO>('/v1/sat/sun-interference/status', { params: { stationId } }),
 };
 
 // ==================== 设备 ====================
