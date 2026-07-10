@@ -85,16 +85,20 @@ export default function EnvironmentalInfo() {
   }, []);
 
   // 天气预报 + 环境统计（雪天预测/实测）+ 当前环境（湿度）
-  const fetchWeatherAndEnv = useCallback(async () => {
+  // 页面刷新时 token 可能正在刷新，首次请求可能失败，延迟重试一次
+  const fetchWeatherAndEnv = useCallback(async (isRetry = false) => {
     const stationId = getEffectiveStationId();
     try {
       const [forecastRes, envCurrentRes, envStatsRes] = await Promise.all([
-        weatherApi.getForecast(stationId).catch(() => null),
+        weatherApi.getForecast(stationId).catch((e) => { if (!isRetry) console.warn('[weather] forecast failed, will retry', e?.message); return null; }),
         environmentApi.getCurrent(stationId).catch(() => null),
         environmentApi.getStats(stationId).catch(() => null),
       ]);
       if (forecastRes) {
         setForecast([forecastRes.today, forecastRes.tomorrow, forecastRes.dayAfterTomorrow]);
+      } else if (!isRetry) {
+        // 首次失败：2秒后重试（等 token 刷新完成）
+        setTimeout(() => fetchWeatherAndEnv(true), 2000);
       }
       if (envCurrentRes && typeof envCurrentRes.humidity === 'number') {
         setHumidity(envCurrentRes.humidity);
