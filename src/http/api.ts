@@ -61,12 +61,17 @@ import type {
   Ys7LiveAddressVO,
   Ys7CaptureVO,
   Ys7TokenVO,
+  AntennaConfigVO,
+  AntennaConfigForm,
+  AntennaDisplacementBaseline,
   SystemDetail,
   PowerChartItem,
   PowerChartParams,
   TemperatureChartItem,
   SnowHistoryParams,
   SnowDataHistoryItem,
+  SignalChartItem,
+  SignalChartParams,
   SnowExtraInfo,
   DashboardEnergyStats,
   DashboardRiskStats,
@@ -334,6 +339,12 @@ export const snowApi = {
   /** 系统数据历史（多指标折线图：信号/温度/电压/电流/功率等） */
   getDataHistory: (params: SnowHistoryParams) =>
     httpGet<SnowDataHistoryItem[]>('/v1/snow/data-history', { params }),
+  /** 信号强度折线图（智能聚合，自动按区间选粒度） */
+  getSignalChart: (params: SignalChartParams) =>
+    httpGet<SignalChartItem[]>('/v1/snow/signal-chart', { params }),
+  /** 信号强度折线图（指定粒度，timeLevel: 1=小时/2=天/3=周） */
+  getSignalChartByLevel: (params: SignalChartParams) =>
+    httpGet<SignalChartItem[]>('/v1/snow/signal-chart-by-level', { params }),
   /** 萤石云 AccessToken（直播/抓图前换取） */
   getYs7Token: () => httpGet<Ys7TokenVO>('/v1/snow/ys7-token'),
 };
@@ -508,6 +519,21 @@ export const cameraApi = {
   capture: (deviceSerial: string, channelNo: number) =>
     httpPost<Ys7CaptureVO>(`/v1/sat/cameras/${deviceSerial}/capture`, undefined, {
       params: { channelNo },
+    }),
+};
+
+// ==================== 天线参数 ====================
+export const antennaApi = {
+  /** 获取台站天线参数配置 */
+  getConfig: (stationId: number) =>
+    httpGet<AntennaConfigVO>('/v1/sat/antenna/config', { params: { stationId } }),
+  /** 保存天线参数配置 */
+  saveConfig: (data: AntennaConfigForm) =>
+    httpPut<AntennaConfigVO>('/v1/sat/antenna/config', data),
+  /** 位移归一化（将当前 MCU 上报值设为基准） */
+  normalize: (stationId: number) =>
+    httpPost<AntennaDisplacementBaseline>('/v1/sat/antenna/normalize', undefined, {
+      params: { stationId },
     }),
 };
 

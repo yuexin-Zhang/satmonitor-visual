@@ -47,6 +47,7 @@ const menuGroups: MenuGroup[] = [
     items: [
       { path: '/admin/stations', label: '台站管理', icon: Satellite },
       { path: '/admin/devices', label: '设备管理', icon: Cpu },
+      { path: '/admin/antenna-config', label: '天线参数管理', icon: Radio },
       { path: '/admin/alarms', label: '告警管理', icon: ShieldAlert },
     ],
   },

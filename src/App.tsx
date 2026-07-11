@@ -21,6 +21,7 @@ import SystemConfig from './pages/Admin/SystemConfig';
 import StorageConfig from './pages/Admin/StorageConfig';
 import AIConfig from './pages/Admin/AIConfig';
 import Cameras from './pages/Admin/Cameras';
+import AntennaConfig from './pages/Admin/AntennaConfig';
 import SnowExecLogs from './pages/Admin/SnowExecLogs';
 import Profile from './pages/Admin/Profile';
 
@@ -72,6 +73,7 @@ export default function App() {
         <Route path="storage-config" element={<StorageConfig />} />
         <Route path="ai-config" element={<AIConfig />} />
         <Route path="cameras" element={<Cameras />} />
+        <Route path="antenna-config" element={<AntennaConfig />} />
         <Route path="snow-exec-logs" element={<SnowExecLogs />} />
         <Route path="profile" element={<Profile />} />
       </Route>

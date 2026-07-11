@@ -204,6 +204,24 @@ export interface SnowDataHistoryItem {
   [metric: string]: string | number;
 }
 
+// /v1/snow/signal-chart-by-level 信号强度折线图（指定粒度）
+// timeLevel: 1=小时, 2=天, 3=周
+export interface SignalChartItem {
+  time: string;
+  signalStrength: number;
+  maxSignalStrength?: number;
+  minSignalStrength?: number;
+  sampleCount?: number;
+  timeLevel?: number;
+}
+
+export interface SignalChartParams {
+  tag?: number;
+  startTime?: string;
+  endTime?: string;
+  timeLevel?: 1 | 2 | 3;
+}
+
 // /v1/snow/extra-info 扩展信息（后端自定义结构，前端按需读取）
 export type SnowExtraInfo = Record<string, any>;
 
@@ -914,4 +932,51 @@ export interface Ys7CaptureVO {
 export interface Ys7TokenVO {
   accessToken: string;
   expireTime?: number;
+}
+
+// ==================== 天线参数 ====================
+// /v1/sat/antenna/config 天线频率参数
+export interface AntennaFrequencyConfig {
+  name: string;            // 播出节目名称，如 "浙江一套"
+  value: number;           // 频率值(MHz)，如 3825
+  polarization: string;    // 极化方式，如 "垂直(V)"
+  symbolRate: number;      // 符号率，如 6780
+}
+
+// /v1/sat/antenna/config 位移信息（GET 返回）
+export interface AntennaDisplacement {
+  horizontal: string;      // 水平位移
+  vertical: string;        // 垂直位移
+  roll: string;            // 翻滚角
+  status: string;          // 状态，如 "正常"
+  normalized: boolean;     // 是否已归一化
+  normalizedAt: string;    // 归一化时间
+}
+
+// /v1/sat/antenna/config 位移归一化基准（GET 返回）
+export interface AntennaDisplacementBaseline {
+  yaw: string;
+  pitch: string;
+  roll: string;
+  normalizedAt: string;
+}
+
+// /v1/sat/antenna/config 完整响应（GET）
+export interface AntennaConfigVO {
+  stationId: number;
+  satellite: string;       // 卫星名称及轨道位置
+  azimuth: string;         // 方位角
+  elevation: string;       // 仰角
+  frequency?: AntennaFrequencyConfig;
+  displacement?: AntennaDisplacement;
+  displacementBaseline?: AntennaDisplacementBaseline;
+}
+
+// /v1/sat/antenna/config 保存请求体（PUT）
+export interface AntennaConfigForm {
+  stationId: number;
+  satellite: string;
+  azimuth: string;
+  elevation: string;
+  frequency?: AntennaFrequencyConfig;
 }

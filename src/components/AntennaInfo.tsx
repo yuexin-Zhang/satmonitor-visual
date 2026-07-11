@@ -5,23 +5,23 @@ import {
   MoveDiagonal,
   ShieldCheck,
 } from 'lucide-react';
-import { snowApi, thresholdApi, dashboardApi } from '@/src/http/api';
+import { snowApi, thresholdApi, dashboardApi, antennaApi } from '@/src/http/api';
 import { getEffectiveStationId } from '@/src/http/client';
-import type { SystemDetail, SnowDataHistoryItem } from '@/src/http/types';
+import type { SystemDetail, SignalChartItem, AntennaConfigVO } from '@/src/http/types';
 import ThresholdBarChart, { type TimeRange } from './ThresholdBarChart';
 
-// 天线基础参数：后端 /v1/snow/extra-info 实测仅返回 relayStates，不含卫星/方位角/仰角/频率，
-// 后端暂无对应接口，故此处使用静态常量（非 mock 数据）。接入接口后替换即可。
-const ANTENNA_CONST = {
-  satellite: '中星6E 115.5°',
-  azimuth: '192°',
-  elevation: '40°',
-  frequency: { name: '浙江一套', value: 3825, polarization: '垂直(V)', symbolRate: 6780 },
+// 天线基础参数缺省值：接口未返回或加载失败时使用（非 mock，仅占位）
+const ANTENNA_FALLBACK = {
+  satellite: '--',
+  azimuth: '--',
+  elevation: '--',
+  frequency: { name: '--', value: 0, polarization: '--', symbolRate: 0 },
 };
 // 信号阈值缺省（接口未返回或未登录时使用）
 const DEFAULT_SIGNAL_MIN = 70;
 
 // 不同时间范围对应的查询参数（startTime/endTime/timeLevel）
+// signal-chart-by-level 的 timeLevel: 1=小时, 2=天, 3=周
 function getRangeParams(range: TimeRange) {
   const end = new Date();
   const start = new Date();
@@ -33,8 +33,10 @@ function getRangeParams(range: TimeRange) {
     case 'halfYear': start.setDate(start.getDate() - 180); break;
     case 'year': start.setFullYear(start.getFullYear() - 1); break;
   }
-  // timeLevel: 1=小时/日/周粒度, 2=月/半年/年粒度
-  const timeLevel: 1 | 2 = (range === 'hour' || range === 'day' || range === 'week') ? 1 : 2;
+  // hour/day -> 1(小时), week/month -> 2(天), halfYear/year -> 3(周)
+  const timeLevel: 1 | 2 | 3 =
+    range === 'hour' || range === 'day' ? 1 :
+    range === 'week' || range === 'month' ? 2 : 3;
   return {
     tag: 1,
     startTime: start.toISOString().slice(0, 10) + ' 00:00:00',
@@ -43,15 +45,14 @@ function getRangeParams(range: TimeRange) {
   };
 }
 
-// 将 /v1/snow/data-history 返回的原始数据转为图表可用格式
+// 将 /v1/snow/signal-chart-by-level 返回的数据转为图表可用格式
 // 取 signalStrength 字段作为信号强度，time 取 MM-DD 或 HH:mm 作为 label
-function toChartData(rows: SnowDataHistoryItem[], range: TimeRange): { label: string; value: number }[] {
+function toChartData(rows: SignalChartItem[], range: TimeRange): { label: string; value: number }[] {
   return rows.map((row) => {
     const raw = row.signalStrength;
-    // 后端可能以字符串 "92%" 或数字 92 返回
     const value = typeof raw === 'string' ? parseFloat(raw) : (raw as number) ?? 0;
     const t = row.time || '';
-    // 小时/日 粒度显示 HH:mm，其它显示 MM-DD
+    // 小时粒度显示 HH:mm，天/周粒度显示 MM-DD
     const label = (range === 'hour' || range === 'day')
       ? t.slice(11, 16)
       : t.slice(5, 10);
@@ -100,15 +101,24 @@ export default function AntennaInfo() {
   const [refreshTime, setRefreshTime] = useState<Date | null>(null);
   const [signalHistory, setSignalHistory] = useState<{ label: string; value: number }[]>([]);
 
+  // 天线基础参数：GET /v1/sat/antenna/config?stationId=
+  const [antennaConfig, setAntennaConfig] = useState<AntennaConfigVO | null>(null);
+
   // 真实接口拉取的阈值与年度风险次数（未登录/接口失败时回落到常量）
   const [signalMin, setSignalMin] = useState<number>(DEFAULT_SIGNAL_MIN);
   const [riskCounts, setRiskCounts] = useState<{ signal: number; offset: number }>({ signal: 0, offset: 0 });
 
-  // 设备实时详情 + 信号阈值 + 年度风险统计
+  // 设备实时详情 + 信号阈值 + 年度风险统计 + 天线参数
   useEffect(() => {
     snowApi.getDetail(1).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
 
     const stationId = getEffectiveStationId();
+    // 天线参数：GET /v1/sat/antenna/config?stationId=
+    antennaApi
+      .getConfig(stationId)
+      .then((data) => setAntennaConfig(data))
+      .catch(() => {});
+
     // 信号阈值：GET /v1/sat/thresholds/{stationId}
     thresholdApi
       .get(stationId)
@@ -131,7 +141,7 @@ export default function AntennaInfo() {
   }, []);
 
   const fetchSignalHistory = useCallback((r: TimeRange) => {
-    snowApi.getDataHistory(getRangeParams(r))
+    snowApi.getSignalChartByLevel(getRangeParams(r))
       .then((rows) => setSignalHistory(rows?.length ? toChartData(rows, r) : []))
       .catch(() => setSignalHistory([]));
   }, []);
@@ -148,11 +158,15 @@ export default function AntennaInfo() {
     return !isNaN(num) && num < signalMin ? '预警' : '正常';
   })();
 
-  const { satellite, azimuth, elevation, frequency: freq } = ANTENNA_CONST;
-  // 位移状况：水平取 yaw，垂直取 pitch（来自 /v1/snow/detail）
-  const displacementHorizontal = deviceData?.yaw || '--';
-  const displacementVertical = deviceData?.pitch || '--';
-  const displacementStatus = '正常';
+  const satellite = antennaConfig?.satellite || ANTENNA_FALLBACK.satellite;
+  const azimuth = antennaConfig?.azimuth || ANTENNA_FALLBACK.azimuth;
+  const elevation = antennaConfig?.elevation || ANTENNA_FALLBACK.elevation;
+  const freq = antennaConfig?.frequency || ANTENNA_FALLBACK.frequency;
+  // 位移状况：取自 /v1/sat/antenna/config 返回的 displacement（后端按归一化基准换算后的相对偏移）
+  const displacement = antennaConfig?.displacement;
+  const displacementHorizontal = displacement?.horizontal || '--';
+  const displacementVertical = displacement?.vertical || '--';
+  const displacementStatus = displacement?.status || '正常';
   const signalAlertCount = riskCounts.signal;
   const offsetAlertCount = riskCounts.offset;
   const threshold = signalMin;
@@ -180,6 +194,14 @@ export default function AntennaInfo() {
         {/* 基础参数 */}
         <div className="shrink-0 space-y-1 text-[clamp(11px,0.9vw,15px)]">
           <div className="flex items-center gap-2">
+            <span className="text-slate-400">播出节目:</span>
+            <span className="text-slate-200">{freq.name}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-slate-400">极化方式:</span>
+            <span className="text-slate-200">{freq.polarization}</span>
+          </div>
+          <div className="flex items-center gap-2">
             <span className="text-slate-400">卫星:</span>
             <span className="text-slate-200">{satellite}</span>
           </div>
@@ -192,12 +214,6 @@ export default function AntennaInfo() {
               <span className="text-slate-400">仰角:</span>
               <span className="text-slate-200">{elevation}</span>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-slate-400">{freq.name}:</span>
-            <span className="text-sky-400 font-mono">{freq.value}</span>
-            <span className="text-slate-500">{freq.polarization}:</span>
-            <span className="text-sky-400 font-mono">{freq.symbolRate}</span>
           </div>
         </div>
 

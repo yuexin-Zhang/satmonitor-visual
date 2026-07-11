@@ -67,10 +67,10 @@ export default function LiveVideo({
     // ---------- 第 0 级：SRS 直播流（配置在 .env，不走后端）----------
     if (srsUrl && !skipSrsRef.current) {
       try {
-        // 先探测 SRS 流是否可达（3 秒超时），避免 SRS 挂了时长时间卡在 loading
+        // 探测 SRS 流是否可达（3 秒超时），用 GET 而非 HEAD（部分 nginx/SRS 对 HEAD 支持不一致）
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const resp = await fetch(srsUrl, { method: 'HEAD', signal: controller.signal });
+        const resp = await fetch(srsUrl, { method: 'GET', signal: controller.signal });
         clearTimeout(timeoutId);
         if (!resp.ok) throw new Error(`SRS HTTP ${resp.status}`);
         // 探测通过，使用 SRS 流播放
@@ -225,12 +225,28 @@ export default function LiveVideo({
     };
   }, [loadStream]);
 
+  // 抑制 play() AbortError：streamUrl 变化时 key 递增导致 ReactPlayer 卸载重挂，
+  // 旧 video 元素的 play() Promise 会因元素从 DOM 移除而 reject 为 AbortError。
+  // SRS 探测的 AbortError 已在 loadStream 的 try/catch 中处理，不会到达此处。
+  useEffect(() => {
+    const handler = (e: PromiseRejectionEvent) => {
+      if (e.reason?.name === 'AbortError') {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('unhandledrejection', handler);
+    return () => window.removeEventListener('unhandledrejection', handler);
+  }, []);
+
   // 接口返回的 streamUrl 变化时，强制 react-player 重新加载
   useEffect(() => {
     if (streamUrl) {
       setLoading(true);
       setError(null);
       setKey((k) => k + 1);
+      // 兜底：HLS 直播流 onReady/onPlay 可能都不触发，4 秒后强制隐藏 loading
+      const t = setTimeout(() => setLoading(false), 4000);
+      return () => clearTimeout(t);
     }
   }, [streamUrl]);
 
@@ -256,6 +272,12 @@ export default function LiveVideo({
   }, [source]);
 
   const handleReady = useCallback(() => {
+    setLoading(false);
+    setError(null);
+  }, []);
+
+  // HLS 直播流 onReady 可能不触发，onPlay 时也清除 loading
+  const handlePlay = useCallback(() => {
     setLoading(false);
     setError(null);
   }, []);
@@ -360,6 +382,7 @@ export default function LiveVideo({
                 height="100%"
                 controls={false}
                 onReady={handleReady}
+                onPlay={handlePlay}
                 onError={handleError}
                 config={{
                   file: {

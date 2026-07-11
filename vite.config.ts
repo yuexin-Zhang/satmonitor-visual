@@ -31,6 +31,15 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           // rewrite: (path) => path.replace(/^\/api/, ''), // 如后端不需要 /api 前缀则取消注释
         },
+        // SRS 直播流代理：避免浏览器直接请求 SRS 服务器时遇到 CORS 重复头问题
+        // （SRS 服务器同时被 SRS 和 nginx 添加了 Access-Control-Allow-Origin: *）
+        // 直接代理 /live 路径（不做 rewrite），因为 m3u8 内部的相对 URL（如
+        // /live/xxx.m3u8?hls_ctx=... 和 xxx.ts?hls_ctx=...）需要保持 /live 前缀
+        // 才能正确走通代理。生产环境大屏与 SRS 同源，不需要此代理。
+        '/live': {
+          target: 'http://8.145.43.245:9000',
+          changeOrigin: true,
+        },
       },
     },
   };

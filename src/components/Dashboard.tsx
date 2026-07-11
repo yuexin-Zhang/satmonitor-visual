@@ -49,10 +49,10 @@ export default function Dashboard() {
         <main className="flex-1 p-4 grid grid-cols-12 gap-4 min-h-0 overflow-y-auto">
           {/* Left Column */}
           <div className="col-span-3 flex flex-col gap-3 overflow-hidden">
-            <div className="flex-[4.5] min-h-0">
+            <div className="flex-[4.8] min-h-0">
               <AntennaInfo />
             </div>
-            <div className="flex-[1.8] min-h-0">
+            <div className="flex-[1.5] min-h-0">
               <SunInterference />
             </div>
             <div className="flex-[3] min-h-0">

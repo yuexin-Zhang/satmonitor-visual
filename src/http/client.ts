@@ -11,10 +11,12 @@ const api = axios.create({
 
 // 公开接口白名单：登录/验证码/刷新令牌不带 Authorization，
 // 避免 localStorage 中残留的过期 token 污染请求导致 "访问令牌无效或已过期"
+// /v1/snow/** 为后端白名单接口（单片机/大屏轮询），同样不发送 token
 const PUBLIC_API_PATTERNS = [
   '/v1/auth/login',
   '/v1/auth/captcha',
   '/v1/auth/refresh-token',
+  '/v1/snow/',
 ];
 
 // 请求拦截器：admin 页面下所有请求都附加 admin_token，否则用 monitor_token
@@ -188,20 +190,20 @@ api.interceptors.response.use(
 
     // 刷新接口本身 401：refreshToken 已失效，直接登出
     if (url.includes('/v1/auth/refresh-token')) {
-      if (!import.meta.env.DEV) clearAuthAndRedirect();
+      clearAuthAndRedirect();
       return Promise.reject(error);
     }
 
     // 已重试过仍 401：避免死循环，直接登出
     if (retriedConfigs.has(originalRequest)) {
-      if (!import.meta.env.DEV) clearAuthAndRedirect();
+      clearAuthAndRedirect();
       return Promise.reject(error);
     }
 
     const refreshToken = getRefreshToken();
     // 无 refreshToken：直接登出
     if (!refreshToken) {
-      if (!import.meta.env.DEV) clearAuthAndRedirect();
+      clearAuthAndRedirect();
       return Promise.reject(error);
     }
 
@@ -241,7 +243,7 @@ api.interceptors.response.use(
       isRefreshing = false;
       pendingQueue.forEach((p) => p.reject(refreshErr));
       pendingQueue = [];
-      if (!import.meta.env.DEV) clearAuthAndRedirect();
+      clearAuthAndRedirect();
       return Promise.reject(refreshErr);
     }
   }
