@@ -386,7 +386,6 @@ Response: { code:"200", data:[{ hls, hlsHd, status, exception, ret, desc }] }
 | 报警/正常状态切换 | `isAlerting` | ✅ | 由后端告警记录驱动；`alarmApi.getRecordsPage({status:0})` 有数据则报警 |
 | 报警音效（WebAudio 振荡器） | — | ⚪ | 前端 `useAlarmSound` hook |
 | 静音开关 | — | ⚪ | 前端 state |
-| 「模拟报警/正常」按钮 | — | ⚪ | 演示用，前端 state（不再注入伪造报警） |
 | 正常态文案 | — | ⚪ | 固定文案「系统运行正常，暂无异常告警。」 |
 | 最新报警消息 | `latestPending.message` | ✅ | `GET /v1/sat/alarms/records/page?status=0` → `SatAlarmRecordVO.content` |
 | 报警时间 | `latestPending.time` | ✅ | 同上 → `triggerTime` |

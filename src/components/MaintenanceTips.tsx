@@ -272,14 +272,6 @@ export default function MaintenanceTips({ isAlerting: initialAlerting }: Mainten
           )}
         </button>
 
-        {/* 模拟切换按钮 */}
-        <button
-          onClick={() => setIsAlerting((v) => !v)}
-          className="absolute -top-9 right-0 px-3 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-colors text-[clamp(12px,1vw,14px)] text-slate-300 z-10"
-        >
-          {isAlerting ? '模拟正常' : '模拟报警'}
-        </button>
-
         <div
           className={`dashboard-panel border backdrop-blur-2xl transition-colors duration-500 ${
             isAlerting
