@@ -206,6 +206,7 @@ export default function EnvironmentalInfo() {
         <ThresholdBarChart
           data={tempChartData}
           threshold={tempThreshold}
+          invert
           yMax={40}
           yTickInterval={[0, 10, 20, 30, 40]}
           title="温度趋势"

@@ -8,6 +8,8 @@ interface ThresholdBarChartProps {
   threshold: number;
   colorAbove?: string;
   colorBelow?: string;
+  /** 阈值方向反转：默认 false（>=阈值=正常），true 时 >=阈值=预警（用于温度等"超标即告警"场景） */
+  invert?: boolean;
   yMax: number;
   yTickInterval?: number[];
   title?: string;
@@ -32,6 +34,7 @@ export default function ThresholdBarChart({
   threshold,
   colorAbove = '#0ea5e9',
   colorBelow = '#f43f5e',
+  invert = false,
   yMax,
   yTickInterval,
   title,
@@ -43,18 +46,20 @@ export default function ThresholdBarChart({
 }: ThresholdBarChartProps) {
   const labels = useMemo(() => data.map((d) => d.label), [data]);
 
-  const aboveData = useMemo(
-    () => data.map((d) => (d.value >= threshold ? d.value : null)),
-    [data, threshold],
+  // 正常数据：invert 时 < 阈值为正常，否则 >= 阈值为正常
+  const normalData = useMemo(
+    () => data.map((d) => (invert ? d.value < threshold : d.value >= threshold) ? d.value : null),
+    [data, threshold, invert],
   );
-  const belowData = useMemo(
-    () => data.map((d) => (d.value < threshold ? d.value : null)),
-    [data, threshold],
+  // 预警数据：invert 时 >= 阈值为预警，否则 < 阈值为预警
+  const warningData = useMemo(
+    () => data.map((d) => (invert ? d.value >= threshold : d.value < threshold) ? d.value : null),
+    [data, threshold, invert],
   );
 
   // bar label 不带单位，只显示数字
-  const aboveBarLabel = useCallback((item: any) => item.value != null ? `${item.value}` : '', []);
-  const belowBarLabel = useCallback((item: any) => item.value != null ? `${item.value}` : '', []);
+  const normalBarLabel = useCallback((item: any) => item.value != null ? `${item.value}` : '', []);
+  const warningBarLabel = useCallback((item: any) => item.value != null ? `${item.value}` : '', []);
 
   const showRangeSelector = range != null && onRangeChange != null;
 
@@ -106,19 +111,19 @@ export default function ThresholdBarChart({
           }
           series={[
             {
-              data: aboveData,
+              data: normalData,
               label: '正常',
               color: colorAbove,
               stack: 'val',
-              barLabel: aboveBarLabel,
+              barLabel: normalBarLabel,
               valueFormatter: (v: number | null) => v != null ? `${v}${unit}` : '',
             },
             {
-              data: belowData,
+              data: warningData,
               label: '预警',
               color: colorBelow,
               stack: 'val',
-              barLabel: belowBarLabel,
+              barLabel: warningBarLabel,
               valueFormatter: (v: number | null) => v != null ? `${v}${unit}` : '',
             },
           ]}

@@ -512,9 +512,18 @@ export const cameraApi = {
   /** 获取设备在线状态 */
   getDeviceStatus: (deviceSerial: string) =>
     httpGet<number>(`/v1/sat/cameras/${deviceSerial}/status`),
-  /** 获取直播/回放地址 */
+  /** 获取直播/回放地址（按设备序列号） */
   getLiveAddress: (params: { deviceSerial: string; channelNo?: number; protocol?: number }) =>
     httpGet<Ys7LiveAddressVO[]>('/v1/sat/cameras/live-address', { params }),
+  /** 获取直播地址（按台站 stationId，大屏用）
+   *  protocol=2 返回 playerUrl（iframe 方案），protocol=4 返回 flv（flv.js 方案）
+   *  quality=1 高清主码流（必须用 1，不要用 2） */
+  getLiveAddressByStation: (params: {
+    stationId: number;
+    channelNo?: number;
+    protocol?: number;
+    quality?: number;
+  }) => httpGet<Ys7LiveAddressVO>('/v1/sat/cameras/live-address', { params }),
   /** 设备抓图 */
   capture: (deviceSerial: string, channelNo: number) =>
     httpPost<Ys7CaptureVO>(`/v1/sat/cameras/${deviceSerial}/capture`, undefined, {

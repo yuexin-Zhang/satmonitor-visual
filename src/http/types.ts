@@ -919,6 +919,8 @@ export interface Ys7LiveAddressVO {
   url?: string;
   ezopenUrl?: string;
   playerUrl?: string;
+  hls?: string;
+  flv?: string;
   expireTime?: string;
   accessToken?: string;
 }

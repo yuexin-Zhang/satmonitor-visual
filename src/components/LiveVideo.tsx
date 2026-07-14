@@ -1,307 +1,165 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import ReactPlayer from 'react-player';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Video, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
-import { cameraApi, snowApi } from '@/src/http/api';
+import { cameraApi } from '@/src/http/api';
+import { getEffectiveStationId } from '@/src/http/client';
 
-const ReactPlayerElement = ReactPlayer as any;
-
-// 默认摄像头设备（萤石云）
-const DEFAULT_DEVICE_SERIAL = 'GN1818878';
+// channelNo 固定 1
 const DEFAULT_CHANNEL_NO = 1;
-// 兜底地址：当所有接口都失败时使用（已过期的 v3/openlive 地址）
-const FALLBACK_URL =
-  'https://open.ys7.com/v3/openlive/GN1818878_1_1.m3u8?expire=1777856899&id=968800755977609216&t=77eb7bbc8fb13026968fefe86d04905a78e657790802ea811bc66dd7222ad731&ev=101&supportH265=1';
-const FALLBACK_NAME = 'GN1818878_1_1';
-
-// SRS 直播流（优先于萤石，地址配置在 .env：VITE_SRS_HLS_CHUNAN）
-const DEFAULT_SRS_URL = import.meta.env.VITE_SRS_HLS_CHUNAN || '';
+// quality=1 高清主码流（必须用 1，不要用 2，否则 9053）
+const DEFAULT_QUALITY = 1;
+// protocol=2 返回 playerUrl，用 iframe 嵌入萤石官方播放器（支持 H.265）
+const DEFAULT_PROTOCOL = 2;
+// 无 expireTime 时默认 20 小时刷新一次（地址约 24 小时过期）
+const DEFAULT_REFRESH_MS = 20 * 3600 * 1000;
+// 重试退避基数（秒），指数退避：3s, 6s, 12s, 24s, 30s, 30s...
+const RETRY_BASE_DELAY = 3000;
+const RETRY_MAX_DELAY = 30000;
 
 interface LiveVideoProps {
-  /** 指定设备序列号，默认 GN1818878 */
-  deviceSerial?: string;
-  /** 指定通道号，默认 1 */
+  /** 台站 ID，默认取登录用户绑定台站 */
+  stationId?: number;
+  /** 通道号，默认 1 */
   channelNo?: number;
-  /** 兜底流地址（接口全部失败时使用） */
-  fallbackUrl?: string;
   /** 是否启用，默认 true */
   enabled?: boolean;
-  /** SRS 直播流地址；传空字符串禁用 SRS，不传则读 VITE_SRS_HLS_CHUNAN */
-  srsUrl?: string;
 }
 
 export default function LiveVideo({
-  deviceSerial = DEFAULT_DEVICE_SERIAL,
+  stationId,
   channelNo = DEFAULT_CHANNEL_NO,
-  fallbackUrl = FALLBACK_URL,
   enabled = true,
-  srsUrl = DEFAULT_SRS_URL,
 }: LiveVideoProps) {
-  // 最终用于播放的地址
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [streamName, setStreamName] = useState<string>(`${deviceSerial}_${channelNo}`);
-  // 数据来源标记，便于调试
-  const [source, setSource] = useState<'srs' | 'backend' | 'ys7-direct' | 'fallback' | null>(null);
-  // 是否使用 iframe 播放（针对 playerUrl）
-  const [useIframe, setUseIframe] = useState(false);
+  const effectiveStationId = stationId ?? getEffectiveStationId();
 
+  // 萤石官方播放器地址（iframe src）
+  const [playerUrl, setPlayerUrl] = useState<string | null>(null);
+  const [streamName, setStreamName] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // 用于强制 iframe 重新挂载
   const [key, setKey] = useState(0);
-  const playerRef = useRef<any>(null);
+
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // SRS 播放失败后置 true，自动重试时跳过 SRS 直接降级到萤石；手动重试时重置
-  const skipSrsRef = useRef(false);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryCountRef = useRef(0);
+  const mountedRef = useRef(true);
 
   /**
    * 取流主流程：
-   * 0) 优先使用 SRS 直播流（配置在 .env，不走后端，流不过期）
-   * 1) 后端 /v1/sat/cameras/live-address（自动使用本地 monitor_token / admin_token）
-   * 2) 失败（如 401）时降级：调 /v1/snow/ys7-token（公开免认证）拿萤石 token，再直接调萤石开放 API
-   * 3) 仍失败时使用兜底地址（可能已过期，播放会触发 onError）
-   * 拿到地址后根据 expireTime 安排下次刷新
+   * 1. 调后端 /v1/sat/cameras/live-address?stationId=&channelNo=1&protocol=2&quality=1 拿最新 playerUrl
+   * 2. 用 iframe 嵌入 data.playerUrl（萤石官方 H5 播放器，支持 H.265）
+   * 3. 拿到地址后根据 expireTime 安排下次刷新（提前 5 分钟，默认 20 小时）
+   * 4. 失败时重新调接口再试（指数退避）
    */
   const loadStream = useCallback(async () => {
-    const serial = deviceSerial;
-    const channel = channelNo;
-
-    // ---------- 第 0 级：SRS 直播流（配置在 .env，不走后端）----------
-    if (srsUrl && !skipSrsRef.current) {
-      try {
-        // 探测 SRS 流是否可达（3 秒超时），用 GET 而非 HEAD（部分 nginx/SRS 对 HEAD 支持不一致）
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 3000);
-        const resp = await fetch(srsUrl, { method: 'GET', signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (!resp.ok) throw new Error(`SRS HTTP ${resp.status}`);
-        // 探测通过，使用 SRS 流播放
-        setStreamUrl(srsUrl);
-        setUseIframe(false);
-        setStreamName('SRS: chunan-cam1');
-        setSource('srs');
-        setError(null);
-        // SRS 流不过期，无需安排刷新
-        if (refreshTimerRef.current) {
-          clearTimeout(refreshTimerRef.current);
-          refreshTimerRef.current = null;
-        }
-        console.log('[LiveVideo] using SRS stream:', srsUrl);
-        return;
-      } catch (e: any) {
-        const reason = e?.name === 'AbortError' ? 'timeout(3s)' : e?.message || e;
-        console.warn('[LiveVideo] SRS probe failed, fallback to 萤石:', reason);
-        skipSrsRef.current = true;
-        // 继续走第 1 级（萤石）
-      }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
     }
 
-    // ---------- 第 1 级：后端 live-address ----------
     try {
-      const list = await cameraApi.getLiveAddress({
-        deviceSerial: serial,
-        channelNo: channel,
-        protocol: 1, // HLS，浏览器兼容最好
+      const data = await cameraApi.getLiveAddressByStation({
+        stationId: effectiveStationId,
+        channelNo,
+        protocol: DEFAULT_PROTOCOL,
+        quality: DEFAULT_QUALITY,
       });
+
       // 后端可能返回数组或单个对象，兼容两种格式
-      const first = Array.isArray(list) ? list[0] : list;
-      console.log('[LiveVideo] backend response:', {
-        list,
-        first,
-        firstPlayerUrl: first?.playerUrl,
-        hasPlayerUrl: !!first?.playerUrl,
-        playerUrlType: typeof first?.playerUrl,
-        isArray: Array.isArray(list),
-      });
-      if (first) {
-        // 检查是否有 HLS 地址（m3u8 格式）
-        const hlsUrl = (first as any).hls || (first as any).hlsHd || (first as any).rtmpHls;
-        if (hlsUrl && hlsUrl.includes('.m3u8')) {
-          // 找到 HLS 地址，使用 ReactPlayer 播放
-          setStreamUrl(hlsUrl);
-          setUseIframe(false);
-          setStreamName(`${first.deviceSerial ?? serial}_${first.channelNo ?? channel}`);
-          setSource('backend');
-          setError(null);
-          scheduleRefresh(first.expireTime);
-          console.log('[LiveVideo] using HLS URL from backend');
-          return;
-        }
-        // 没有 HLS 地址，尝试使用 playerUrl（iframe 模式）
-        if (first.playerUrl) {
-          setStreamUrl(first.playerUrl);
-          setUseIframe(true);
-          setStreamName(`${first.deviceSerial ?? serial}_${first.channelNo ?? channel}`);
-          setSource('backend');
-          setError(null);
-          scheduleRefresh(first.expireTime);
-          console.log('[LiveVideo] using playerUrl (iframe mode)');
-          return;
-        }
+      const first = Array.isArray(data) ? data[0] : data;
+      if (!first?.playerUrl) {
+        throw new Error('接口未返回 playerUrl');
       }
-      console.warn('[LiveVideo] backend live-address returned empty or no valid url', list);
-    } catch (e: any) {
-      console.warn('[LiveVideo] backend live-address failed:', e?.message || e);
-    }
 
-    // ---------- 第 2 级：公开 ys7-token + 萤石开放 API ----------
-    try {
-      const tokenRes = await snowApi.getYs7Token();
-      const accessToken = tokenRes?.accessToken;
-      if (!accessToken) throw new Error('ys7-token 返回为空');
-      const resp = await fetch('https://open.ys7.com/api/lapp/live/address/get', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          accessToken,
-          source: `${serial}:${channel}`,
-        }),
-      });
-      const json = await resp.json();
-      if (json.code !== '200') {
-        throw new Error(`萤石 ${json.code}: ${json.msg || ''}`);
-      }
-      const item = json.data?.[0];
-      const url = item?.hlsHd || item?.hls;
-      if (!url) {
-        // 例如 ret=60060 "The address is unbound"
-        throw new Error(item?.desc ? `萤石取流失败: ${item.desc}` : '萤石未返回播放地址');
-      }
-      setStreamUrl(url);
-      setUseIframe(false);
-      setStreamName(`${serial}_${channel}`);
-      setSource('ys7-direct');
+      if (!mountedRef.current) return;
+
+      setPlayerUrl(first.playerUrl);
+      setStreamName(`${first.deviceSerial ?? ''}_${first.channelNo ?? channelNo}`);
       setError(null);
-      // 萤石直播地址有效期通常 7 天，提前 1 天刷新
-      scheduleRefresh(Date.now() + 24 * 3600 * 1000);
-      return;
-    } catch (e: any) {
-      console.warn('[LiveVideo] ys7-direct failed:', e?.message || e);
-    }
+      setLoading(false);
+      retryCountRef.current = 0;
 
-    // ---------- 第 3 级：兜底硬编码地址 ----------
-    setStreamUrl(fallbackUrl);
-    setUseIframe(false);
-    setStreamName(FALLBACK_NAME);
-    setSource('fallback');
-    setLoading(false); // 兜底地址设置后结束 loading 状态，交由 ReactPlayer 的 onReady/onError 接管
-    setError(
-      '视频流接口暂不可用（可能原因：未登录、萤石账号未开通直播权限）。\n已切换到兜底地址，若地址过期将无法播放。',
-    );
-  }, [deviceSerial, channelNo, fallbackUrl, srsUrl]);
+      scheduleRefresh(first.expireTime);
+      console.log('[LiveVideo] got playerUrl, expireTime:', first.expireTime);
+    } catch (e: any) {
+      console.warn('[LiveVideo] getLiveAddress failed:', e?.message || e);
+      if (!mountedRef.current) return;
+
+      retryCountRef.current += 1;
+      const attempt = retryCountRef.current;
+      const delay = Math.min(RETRY_MAX_DELAY, RETRY_BASE_DELAY * 2 ** (attempt - 1));
+
+      setError(
+        `视频流获取失败（第 ${attempt} 次重试，${Math.round(delay / 1000)}s 后自动重试）：\n${e?.message || e}\n\n可能原因：\n1. 未登录或登录已过期\n2. 萤石设备离线\n3. 萤石云直播权限未开通`,
+      );
+      setLoading(false);
+
+      // 播放失败时重新调接口再试
+      retryTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) loadStream().catch(() => {});
+      }, delay);
+    }
+  }, [effectiveStationId, channelNo]);
 
   /**
    * 根据过期时间安排下一次刷新。
-   * 默认提前 5 分钟刷新；无 expireTime 时 30 分钟轮询一次。
+   * 默认提前 5 分钟刷新；无 expireTime 时 20 小时刷新一次。
    */
-  const scheduleRefresh = useCallback((expireTime?: string | number) => {
-    if (refreshTimerRef.current) {
-      clearTimeout(refreshTimerRef.current);
-      refreshTimerRef.current = null;
-    }
-    let ms = 30 * 60 * 1000;
-    if (expireTime) {
-      const exp =
-        typeof expireTime === 'string'
-          ? /\d{13,}/.test(expireTime)
-            ? Number(expireTime) // 毫秒时间戳字符串
-            : new Date(expireTime).getTime()
-          : expireTime;
-      if (exp > Date.now()) {
-        ms = Math.max(60_000, exp - Date.now() - 5 * 60 * 1000);
+  const scheduleRefresh = useCallback(
+    (expireTime?: string) => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
       }
-    }
-    refreshTimerRef.current = setTimeout(() => {
-      loadStream().catch(() => {});
-    }, ms);
-  }, [loadStream]);
+      let ms = DEFAULT_REFRESH_MS;
+      if (expireTime) {
+        const exp =
+          typeof expireTime === 'string'
+            ? /\d{13,}/.test(expireTime)
+              ? Number(expireTime)
+              : new Date(expireTime).getTime()
+            : expireTime;
+        if (exp > Date.now()) {
+          ms = Math.max(60_000, exp - Date.now() - 5 * 60 * 1000);
+        }
+      }
+      refreshTimerRef.current = setTimeout(() => {
+        console.log('[LiveVideo] auto-refreshing live address...');
+        loadStream().catch(() => {});
+      }, ms);
+    },
+    [loadStream],
+  );
 
-  // 初始加载
+  // 初始加载 & stationId 变化时重新加载
   useEffect(() => {
+    mountedRef.current = true;
     setLoading(true);
-    loadStream().finally(() => {
-      // 第一次加载完成（无论成功失败），loading 状态交由后续 useEffect + ReactPlayer 控制
-    });
+    retryCountRef.current = 0;
+    loadStream().catch(() => {});
+
     return () => {
+      mountedRef.current = false;
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
     };
   }, [loadStream]);
 
-  // 抑制 play() AbortError：streamUrl 变化时 key 递增导致 ReactPlayer 卸载重挂，
-  // 旧 video 元素的 play() Promise 会因元素从 DOM 移除而 reject 为 AbortError。
-  // SRS 探测的 AbortError 已在 loadStream 的 try/catch 中处理，不会到达此处。
+  // playerUrl 变化时强制 iframe 重新加载
   useEffect(() => {
-    const handler = (e: PromiseRejectionEvent) => {
-      if (e.reason?.name === 'AbortError') {
-        e.preventDefault();
-      }
-    };
-    window.addEventListener('unhandledrejection', handler);
-    return () => window.removeEventListener('unhandledrejection', handler);
-  }, []);
-
-  // 接口返回的 streamUrl 变化时，强制 react-player 重新加载
-  useEffect(() => {
-    if (streamUrl) {
+    if (playerUrl) {
       setLoading(true);
       setError(null);
       setKey((k) => k + 1);
-      // 兜底：HLS 直播流 onReady/onPlay 可能都不触发，4 秒后强制隐藏 loading
-      const t = setTimeout(() => setLoading(false), 4000);
-      return () => clearTimeout(t);
     }
-  }, [streamUrl]);
-
-  const handleError = useCallback((e: any) => {
-    console.error('[LiveVideo] playback error:', e, 'source=', source);
-    if (source === 'srs') {
-      // SRS 失败 -> 标记跳过，8 秒后自动重试会降级到萤石
-      skipSrsRef.current = true;
-      setError(
-        'SRS 直播流连接失败，8 秒后自动降级到萤石云备用流。\n' +
-          '可能原因：SRS 服务未启动 / 端口未放行 / 流未推送到 SRS / HTTPS 页面加载 HTTP 流（Mixed Content）',
-      );
-    } else {
-      setError(
-        '视频流加载失败，请检查：\n' +
-          '1. 设备是否在线\n' +
-          '2. 萤石云直播权限是否开通（ret=60060 表示地址未绑定）\n' +
-          '3. 取流地址是否过期（token 会自动刷新，可点重试）\n' +
-          '4. 浏览器是否支持 H265（Chrome 对 H265 支持极差）',
-      );
-    }
-    setLoading(false);
-  }, [source]);
-
-  const handleReady = useCallback(() => {
-    setLoading(false);
-    setError(null);
-  }, []);
-
-  // HLS 直播流 onReady 可能不触发，onPlay 时也清除 loading
-  const handlePlay = useCallback(() => {
-    setLoading(false);
-    setError(null);
-  }, []);
+  }, [playerUrl]);
 
   const handleRetry = useCallback(() => {
     setError(null);
     setLoading(true);
-    // 手动重试 -> 重置 SRS 跳过标记，优先再试 SRS
-    skipSrsRef.current = false;
-    // 重新走一遍取流流程（不只是重载 player）
+    retryCountRef.current = 0;
     loadStream().catch(() => {});
   }, [loadStream]);
-
-  // 播放错误时 8 秒后自动重试（SRS 失败后降级到萤石；不重置 skipSrsRef）
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => {
-        setError(null);
-        setLoading(true);
-        loadStream().catch(() => {});
-      }, 8000);
-      return () => clearTimeout(timer);
-    }
-  }, [error, loadStream]);
 
   if (!enabled) {
     return (
@@ -350,60 +208,25 @@ export default function LiveVideo({
         )}
 
         <div className="w-full h-full">
-          {streamUrl && (
-            useIframe ? (
-              // iframe 模式（针对萤石 playerUrl）
-              <iframe
-                key={key}
-                ref={playerRef as any}
-                src={streamUrl}
-                width="100%"
-                height="100%"
-                frameBorder="0"
-                allowFullScreen
-                allow="autoplay; fullscreen"
-                onLoad={() => {
-                  setLoading(false);
-                  setError(null);
-                }}
-                onError={() => {
-                  handleError(new Error('iframe load failed'));
-                }}
-              />
-            ) : (
-              // ReactPlayer 模式（针对 HLS m3u8）
-              <ReactPlayerElement
-                key={key}
-                ref={playerRef}
-                url={streamUrl}
-                playing
-                muted
-                width="100%"
-                height="100%"
-                controls={false}
-                onReady={handleReady}
-                onPlay={handlePlay}
-                onError={handleError}
-                config={{
-                  file: {
-                    forceHLS: true,
-                    hlsOptions: {
-                      enableWorker: true,
-                      // 对于直播流，降低缓冲以提升实时性
-                      liveSyncDurationCount: 3,
-                      // 遇到 404 片段时自动跳过后续，避免卡死
-                      fragLoadErrorTolerance: 5,
-                    },
-                  },
-                } as any}
-              />
-            )
+          {playerUrl && (
+            <iframe
+              key={key}
+              src={playerUrl}
+              width="100%"
+              height="100%"
+              frameBorder="0"
+              allowFullScreen
+              allow="autoplay; fullscreen"
+              onLoad={() => {
+                setLoading(false);
+                setError(null);
+              }}
+            />
           )}
         </div>
 
-        <div className="absolute bottom-2 left-2 z-20 text-[clamp(12px,1.05vw,17px)] text-white/40 font-mono flex flex-col">
-          <span>VIDEO_STREAM: {streamName} {source && <span className="text-white/30">[{source}]</span>}</span>
-          <span>{new Date().toLocaleString('zh-CN', { hour12: false })}</span>
+        <div className="absolute bottom-2 left-2 z-20 text-[clamp(12px,1.05vw,17px)] text-white/40 font-mono">
+          <span>VIDEO_STREAM: {streamName} [station:{effectiveStationId}]</span>
         </div>
       </div>
     </div>

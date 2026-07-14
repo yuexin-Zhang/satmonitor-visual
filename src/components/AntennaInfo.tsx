@@ -167,6 +167,7 @@ export default function AntennaInfo() {
   const displacementHorizontal = displacement?.horizontal || '--';
   const displacementVertical = displacement?.vertical || '--';
   const displacementStatus = displacement?.status || '正常';
+  const isDisplacementAbnormal = displacementStatus && displacementStatus !== '正常';
   const signalAlertCount = riskCounts.signal;
   const offsetAlertCount = riskCounts.offset;
   const threshold = signalMin;
@@ -232,8 +233,8 @@ export default function AntennaInfo() {
                     <span className="text-[clamp(11px,0.9vw,15px)] text-slate-200 font-medium">位移状况</span>
                     <div className="flex-1 h-px bg-gradient-to-r from-amber-500/30 to-transparent" />
                     <div className="flex items-center gap-1">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      <span className="text-[clamp(11px,0.9vw,15px)] text-emerald-400 font-medium">{displacementStatus}</span>
+                      <ShieldCheck className={`w-4 h-4 ${isDisplacementAbnormal ? 'text-rose-400' : 'text-emerald-400'}`} />
+                      <span className={`text-[clamp(11px,0.9vw,15px)] font-medium ${isDisplacementAbnormal ? 'text-rose-400' : 'text-emerald-400'}`}>{displacementStatus}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-4 text-[clamp(11px,0.9vw,15px)]">
