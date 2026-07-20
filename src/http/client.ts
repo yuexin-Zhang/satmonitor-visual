@@ -263,7 +263,14 @@ export function getStationIdFromStorage(): number | undefined {
     if (!raw) return undefined;
     const u = JSON.parse(raw);
     const id = u?.stationId;
-    return typeof id === 'number' && id > 0 ? id : undefined;
+    // 后端 /v1/users/me 返回的 stationId 可能是 number 也可能是 string（如 "2"），
+    // 这里统一归一化为 number，避免字符串值被丢弃后回退到写死的默认值。
+    if (typeof id === 'number' && id > 0) return id;
+    if (typeof id === 'string' && id.trim() !== '') {
+      const n = Number(id);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    }
+    return undefined;
   } catch {
     return undefined;
   }
