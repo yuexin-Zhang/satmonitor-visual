@@ -43,8 +43,10 @@ api.interceptors.request.use((config) => {
 // 后端对单 token 同时处理的请求数有上限，大屏挂载瞬间会并发十余个请求，
 // 触发 400「请求并发数超出限制」。此处在前端用信号量限制同时在途的请求数，
 // 超出的请求排队等待，从源头避免并发超限。
-const MAX_CONCURRENCY = 2;
-// 后端并发上限可能比前端信号量更严格，偶发 A0502 时做指数退避重试。
+const MAX_CONCURRENCY = 1;
+// 后端单 token 并发上限为 1，前端设为 1 对齐后端，从源头避免 A0502。
+// 信号量仅控制"同时在途"的请求数，排队等待不影响吞吐，首屏请求会依次发出。
+// 仍保留下方指数退避重试作为兜底（网络抖动等偶发场景）。
 // 重试计数必须按 "url+params" 字符串键记录：axios 内部 mergeConfig 会生成新 config
 // 对象，若把计数挂在 config 属性上会丢失，导致重试无限循环（历史 bug）。
 const CONCURRENCY_MAX_RETRY = 2;
