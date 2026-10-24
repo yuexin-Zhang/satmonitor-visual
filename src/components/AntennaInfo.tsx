@@ -6,7 +6,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { snowApi, thresholdApi, dashboardApi, antennaApi } from '@/src/http/api';
-import { getEffectiveStationId } from '@/src/http/client';
+import { getEffectiveStationId, getEffectiveStationTag } from '@/src/http/client';
 import type { SystemDetail, SignalChartItem, AntennaConfigVO } from '@/src/http/types';
 import ThresholdBarChart, { type TimeRange } from './ThresholdBarChart';
 
@@ -38,7 +38,7 @@ function getRangeParams(range: TimeRange) {
     range === 'hour' || range === 'day' ? 1 :
     range === 'week' || range === 'month' ? 2 : 3;
   return {
-    tag: 1,
+    tag: getEffectiveStationTag(),
     startTime: start.toISOString().slice(0, 10) + ' 00:00:00',
     endTime: end.toISOString().slice(0, 10) + ' 23:59:59',
     timeLevel,
@@ -110,7 +110,7 @@ export default function AntennaInfo() {
 
   // 设备实时详情 + 信号阈值 + 年度风险统计 + 天线参数
   useEffect(() => {
-    snowApi.getDetail(1).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
+    snowApi.getDetail(getEffectiveStationTag()).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
 
     const stationId = getEffectiveStationId();
     // 天线参数：GET /v1/sat/antenna/config?stationId=

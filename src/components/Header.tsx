@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { LogOut } from 'lucide-react';
-import { httpGet } from '@/src/http/client';
+import { httpGet, getEffectiveStationTag } from '@/src/http/client';
 import type { SystemDetail } from '@/src/http/types';
 
 export default function Header() {
@@ -11,7 +11,7 @@ export default function Header() {
   const [deviceData, setDeviceData] = useState<{ organizationName?: string } | null>(null);
 
   useEffect(() => {
-    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => setDeviceData(data)).catch(() => {});
+    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: getEffectiveStationTag() } }).then((data) => setDeviceData(data)).catch(() => {});
   }, []);
 
   // 站点名称：来自 /v1/snow/detail.organizationName，接口未返回时显示中性占位

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Zap } from 'lucide-react';
-import { httpGet } from '@/src/http/client';
+import { httpGet, getEffectiveStationTag } from '@/src/http/client';
 import { snowApi } from '@/src/http/api';
 import type { SystemDetail, PowerChartItem } from '@/src/http/types';
 import ThresholdBarChart, { type TimeRange } from './ThresholdBarChart';
@@ -21,7 +21,7 @@ function getRangeParams(range: TimeRange) {
   }
   const timeLevel: 1 | 2 = (range === 'hour' || range === 'day' || range === 'week') ? 1 : 2;
   return {
-    tag: 1,
+    tag: getEffectiveStationTag(),
     startTime: start.toISOString().slice(0, 10) + ' 00:00:00',
     endTime: end.toISOString().slice(0, 10) + ' 23:59:59',
     timeLevel,
@@ -35,7 +35,7 @@ export default function PowerInfo() {
   const [refreshTime, setRefreshTime] = useState<Date | null>(null);
 
   useEffect(() => {
-    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
+    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: getEffectiveStationTag() } }).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
   }, []);
 
   const fetchPowerChart = useCallback((r: TimeRange) => {

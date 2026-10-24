@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ChevronRight, Activity } from 'lucide-react';
-import { httpGet } from '@/src/http/client';
+import { httpGet, getEffectiveStationTag } from '@/src/http/client';
 import type { SystemDetail } from '@/src/http/types';
 
 export default function PositionStatus() {
@@ -8,7 +8,7 @@ export default function PositionStatus() {
   const [refreshTime, setRefreshTime] = useState<Date | null>(null);
 
   useEffect(() => {
-    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } }).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
+    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: getEffectiveStationTag() } }).then((data) => { setDeviceData(data); setRefreshTime(new Date()); }).catch(() => {});
   }, []);
 
   // 水平/垂直位移无后端接口，使用中性静态常量（非 mock）

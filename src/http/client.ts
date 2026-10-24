@@ -288,6 +288,38 @@ export function getEffectiveStationId(): number {
   return getStationIdFromStorage() ?? 1;
 }
 
+/**
+ * 从 localStorage 读取当前登录用户绑定的 stationTag（单片机/网关设备标识）。
+ * 与 stationId 不同，tag 是设备侧标识，用于 /v1/snow/* 系列接口按设备过滤数据。
+ */
+function getStationTagFromStorage(): number | undefined {
+  try {
+    const raw =
+      localStorage.getItem('monitor_user') || localStorage.getItem('admin_user');
+    if (!raw) return undefined;
+    const u = JSON.parse(raw);
+    const tag = u?.stationTag;
+    if (typeof tag === 'number' && tag > 0) return tag;
+    if (typeof tag === 'string' && tag.trim() !== '') {
+      const n = Number(tag);
+      return Number.isFinite(n) && n > 0 ? n : undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 大屏单站模式下的有效 stationTag：优先取登录用户绑定的 stationTag，
+ * 后端未返回 stationTag 时回退到 stationId（当前两台站 stationId 与 tag 一一对应），
+ * 均缺失时回退默认 1（淳安台）。/v1/snow/* 接口（detail / *-chart-by-level 等）
+ * 要求 tag 必填，写死 1 会导致非淳安台账号仍看到淳安台数据。
+ */
+export function getEffectiveStationTag(): number {
+  return getStationTagFromStorage() ?? getStationIdFromStorage() ?? 1;
+}
+
 // 类型安全的 HTTP 辅助函数（仅做类型适配，不含业务封装）
 // ==================== GET 在途请求合并 ====================
 // 大屏多个组件会各自请求同一接口（典型：/v1/snow/detail 被 Header / AntennaInfo /

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Cloud, CloudRain, Sun, Thermometer } from 'lucide-react';
-import { httpGet, getEffectiveStationId } from '@/src/http/client';
+import { httpGet, getEffectiveStationId, getEffectiveStationTag } from '@/src/http/client';
 import { snowApi, snowExecLogApi, weatherApi, environmentApi } from '@/src/http/api';
 import type { SystemDetail, TemperatureChartItem, SatWeatherDayVO } from '@/src/http/types';
 import ThresholdBarChart from './ThresholdBarChart';
@@ -119,7 +119,7 @@ export default function EnvironmentalInfo() {
     const now = new Date();
     const start = new Date(now.getTime() - 5 * 3600_000); // 最近 6 小时
     snowApi.getTemperatureChartByLevel({
-      tag: 1,
+      tag: getEffectiveStationTag(),
       startTime: start.toISOString().slice(0, 10) + ' 00:00:00',
       endTime: now.toISOString().slice(0, 10) + ' 23:59:59',
       timeLevel: 1,
@@ -132,7 +132,7 @@ export default function EnvironmentalInfo() {
   }, []);
 
   const fetchData = useCallback(() => {
-    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: 1 } })
+    httpGet<SystemDetail>('/v1/snow/detail', { params: { tag: getEffectiveStationTag() } })
       .then((data) => { setDeviceData(data); setRefreshTime(new Date()); })
       .catch(() => {});
     fetchTempHistory();
